@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  learnloop:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: learnloop:latest
+    container_name: learnloop-app
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./learn_loop.db
+      - SECRET_KEY=learn_loop_super_secret_jwt_key_2026_scholar_research
+    volumes:
+      - learnloop_data:/app/backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  learnloop_data:

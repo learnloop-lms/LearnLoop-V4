@@ -1,0 +1,54 @@
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  IMAGE_NAME: "learnloop-app"
+  CONTAINER_NAME: "learnloop-container"
+
+# ------------------------------------------------------------------------------
+# Build Stage: Build the multi-stage Docker image
+# ------------------------------------------------------------------------------
+build:
+  stage: build
+  tags:
+    - general-shell
+  script:
+    - echo "=== Building Learn Loop Docker Image ==="
+    - docker build -t ${IMAGE_NAME}:${CI_COMMIT_REF_NAME} -t ${IMAGE_NAME}:latest .
+    - echo "Build completed successfully."
+
+# ------------------------------------------------------------------------------
+# Test Stage: Container startup and healthcheck verification
+# ------------------------------------------------------------------------------
+test:
+  stage: test
+  tags:
+    - general-shell
+  script:
+    - echo "=== Verifying Container Health ==="
+    - docker run -d --name ${CONTAINER_NAME}-test -p 8001:8000 ${IMAGE_NAME}:${CI_COMMIT_REF_NAME}
+    - sleep 5
+    - curl -f http://localhost:8001/ || (docker logs ${CONTAINER_NAME}-test && exit 1)
+    - docker rm -f ${CONTAINER_NAME}-test
+    - echo "Container health check passed!"
+  only:
+    - main
+
+# ------------------------------------------------------------------------------
+# Deploy Stage: Run production container on server
+# ------------------------------------------------------------------------------
+deploy:
+  stage: deploy
+  tags:
+    - general-shell
+  script:
+    - echo "=== Deploying Learn Loop Application ==="
+    - docker ps -a -q --filter "name=${CONTAINER_NAME}" | xargs -r docker rm -f
+    - docker run -d --restart always --name ${CONTAINER_NAME} -p 8000:8000 ${IMAGE_NAME}:${CI_COMMIT_REF_NAME}
+    - docker image prune -f
+    - docker ps --filter "name=${CONTAINER_NAME}"
+    - echo "=== Deployment Complete! Accessible at port 8000 ==="
+  only:
+    - main

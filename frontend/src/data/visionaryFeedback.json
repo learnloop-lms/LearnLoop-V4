@@ -1,0 +1,47 @@
+{
+  "learner_type": "VISIONARY",
+  "pools": {
+    "OPENING": [
+      "Mission control is ready, {name}! Let's launch {course} and explore something big.",
+      "3... 2... 1... liftoff! Your next big idea starts right here, {name}.",
+      "Welcome back, Visionary! The universe of {course} is waiting for you.",
+      "Big thinkers start big journeys. Ready to see the big picture, {name}?",
+      "Your imagination is the rocket fuel. Let's blast into {course}!",
+      "New mission unlocked: {course}. Your future self is already cheering you on!",
+      "Strap in, {name}! Great discoveries are just a few clicks away.",
+      "The stars are aligned for learning today. Let's go, Visionary!",
+      "You see what others miss, {name}. Time to spot the patterns in {course}.",
+      "Systems online, curiosity at 100%. Let's explore {course} together!",
+      "Every great inventor started with one step. Take yours now, {name}!",
+      "A whole galaxy of ideas is ahead. Let's chart it, one star at a time."
+    ],
+    "FORWARD": [
+      "Boom! You just leveled up, {name}. Keep soaring!",
+      "Stellar work! You're moving at light speed.",
+      "Another star collected! Your big-picture thinking is paying off.",
+      "That's a giant leap forward, Visionary. Well done!",
+      "You're on a roll, {name}! Nothing can slow this rocket down.",
+      "Mission progress: awesome! The next challenge is calling you.",
+      "You cracked it! Your intuition is out of this world.",
+      "Look at you go! Another planet conquered on your learning map.",
+      "Brilliant move, {name}! Your ideas are lighting up the sky.",
+      "Full thrusters ahead! You're getting closer to Master.",
+      "Amazing focus! Your future is glowing brighter with every step.",
+      "You're a shining star, {name}. Keep the momentum going!"
+    ],
+    "FALLBACK": [
+      "Even rockets need a course correction, {name}. Let's try again!",
+      "Every great inventor tries more than once. You've got this!",
+      "A small detour is part of the journey. Ready to fly again?",
+      "Don't worry, Visionary. Mistakes are just data for your next big idea.",
+      "Astronauts practice again and again. So can you, {name}!",
+      "You're not falling behind, you're gaining fuel. Let's relaunch!",
+      "Tough orbit? No problem. Your comeback will be even stronger.",
+      "Take a breath, {name}. The stars will wait, and so will your next win.",
+      "Great thinkers rethink. Look at it from a new angle and try again!",
+      "One wobble doesn't end the mission. Get back up, Explorer!",
+      "You've already come so far. One more try and you'll nail it!",
+      "Learning is a loop, not a line. Let's go around once more, {name}."
+    ]
+  }
+}

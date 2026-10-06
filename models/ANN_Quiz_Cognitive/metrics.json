@@ -1,0 +1,119 @@
+{
+  "Random Forest": {
+    "test": {
+      "accuracy": 1.0,
+      "f1_macro": 1.0,
+      "precision_macro": 1.0,
+      "recall_macro": 1.0
+    },
+    "cv_mean": 0.9988269794721407,
+    "cv_std": 0.002346041055718473
+  },
+  "Gradient Boosting": {
+    "test": {
+      "accuracy": 0.9921875,
+      "f1_macro": 0.991677591231417,
+      "precision_macro": 0.9902846195949645,
+      "recall_macro": 0.9931331953071084
+    },
+    "cv_mean": 0.9947196825944454,
+    "cv_std": 0.004309014917953795
+  },
+  "SVM (RBF)": {
+    "test": {
+      "accuracy": 0.9921875,
+      "f1_macro": 0.9901260504201681,
+      "precision_macro": 0.9922480620155039,
+      "recall_macro": 0.9883040935672515
+    },
+    "cv_mean": 0.992371916508539,
+    "cv_std": 0.005111895211517943
+  },
+  "Logistic Regression": {
+    "test": {
+      "accuracy": 0.9765625,
+      "f1_macro": 0.9716385717025785,
+      "precision_macro": 0.9781870428422152,
+      "recall_macro": 0.9667919799498748
+    },
+    "cv_mean": 0.9841573227531482,
+    "cv_std": 0.009007007545884904
+  },
+  "ANN (MLP)": {
+    "test": {
+      "accuracy": 0.98828125,
+      "f1_macro": 0.9853923853923853,
+      "precision_macro": 0.9833333333333334,
+      "recall_macro": 0.9880952380952381
+    },
+    "cv_mean": 0.9888511298947732,
+    "cv_std": 0.005684301927915063,
+    "epochs_trained": 119,
+    "per_class": {
+      "Fast Learner": {
+        "precision": 1.0,
+        "recall": 0.9642857142857143,
+        "f1-score": 0.9818181818181818,
+        "support": 84.0
+      },
+      "Medium Learner": {
+        "precision": 0.95,
+        "recall": 1.0,
+        "f1-score": 0.9743589743589743,
+        "support": 57.0
+      },
+      "Slow Learner": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 115.0
+      },
+      "accuracy": 0.98828125,
+      "macro avg": {
+        "precision": 0.9833333333333334,
+        "recall": 0.9880952380952381,
+        "f1-score": 0.9853923853923853,
+        "support": 256.0
+      },
+      "weighted avg": {
+        "precision": 0.9888671875,
+        "recall": 0.98828125,
+        "f1-score": 0.9883249562937063,
+        "support": 256.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        81,
+        3,
+        0
+      ],
+      [
+        0,
+        57,
+        0
+      ],
+      [
+        0,
+        0,
+        115
+      ]
+    ]
+  },
+  "_meta": {
+    "features": [
+      "msq",
+      "TTQ_sec",
+      "accuracy",
+      "HIT_encoded"
+    ],
+    "classes": [
+      "Fast Learner",
+      "Medium Learner",
+      "Slow Learner"
+    ],
+    "n_train": 1192,
+    "n_val": 256,
+    "n_test": 256
+  }
+}
