@@ -7,6 +7,13 @@
 FROM node:20-slim AS frontend-builder
 WORKDIR /app/frontend
 
+ARG SERVER_IP
+ARG VITE_SERVER_IP
+ARG VITE_API_BASE
+ENV SERVER_IP=$SERVER_IP \
+    VITE_SERVER_IP=$VITE_SERVER_IP \
+    VITE_API_BASE=$VITE_API_BASE
+
 COPY frontend/package*.json ./
 RUN npm ci || npm install
 

@@ -5,35 +5,36 @@ import { getTheme } from '../theme/themeConfig';
 // Determine API Base URL from environment variables or current runtime location
 const resolveApiBase = () => {
   // 1. Explicit API base URL defined in environment (e.g. VITE_API_BASE="http://10.147.20.160:8000/api" or "/api")
-  if (import.meta.env.VITE_API_BASE) {
-    return import.meta.env.VITE_API_BASE.replace(/\/+$/, '');
+  if (import.meta.env.VITE_API_BASE && import.meta.env.VITE_API_BASE.trim()) {
+    return import.meta.env.VITE_API_BASE.trim().replace(/\/+$/, '');
   }
 
   // 2. Explicit backend URL defined in environment (e.g. VITE_BACKEND_URL="http://10.147.20.160:8000")
-  if (import.meta.env.VITE_BACKEND_URL) {
-    const backend = import.meta.env.VITE_BACKEND_URL.replace(/\/+$/, '');
+  if (import.meta.env.VITE_BACKEND_URL && import.meta.env.VITE_BACKEND_URL.trim()) {
+    const backend = import.meta.env.VITE_BACKEND_URL.trim().replace(/\/+$/, '');
     return backend.endsWith('/api') ? backend : `${backend}/api`;
   }
 
-  // 3. Domain or IP specified in environment (e.g. VITE_SERVER_IP="10.147.20.160" or VITE_DOMAIN="learnloop.edu")
+  // 3. Browser runtime environment
+  if (typeof window !== 'undefined') {
+    // When running Vite dev server locally on port 5173, target backend on port 8000 using current hostname or VITE_SERVER_IP
+    if (window.location.port === '5173') {
+      const devHost = import.meta.env.VITE_SERVER_IP || window.location.hostname || 'localhost';
+      return `${window.location.protocol}//${devHost}:8000/api`;
+    }
+    // In production: Served by FastAPI (or reverse proxy) on the same origin/port.
+    // Relative '/api' automatically routes to the host/IP that the user opened in their browser!
+    return '/api';
+  }
+
+  // 4. Domain or IP specified in environment (fallback for SSR/Node)
   const envHost = import.meta.env.VITE_DOMAIN || import.meta.env.VITE_SERVER_IP || import.meta.env.VITE_HOST;
   if (envHost && envHost.trim()) {
-    const proto = import.meta.env.VITE_PROTOCOL || (typeof window !== 'undefined' ? window.location.protocol : 'http:');
+    const proto = import.meta.env.VITE_PROTOCOL || 'http:';
     const cleanHost = envHost.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
     const port = import.meta.env.VITE_BACKEND_PORT || '8000';
     const hostWithPort = cleanHost.includes(':') ? cleanHost : `${cleanHost}:${port}`;
     return `${proto.replace(/:$/, '')}://${hostWithPort}/api`;
-  }
-
-  // 4. Runtime browser environment
-  if (typeof window !== 'undefined') {
-    // When running Vite dev server locally or over network (port 5173), dynamically use the current hostname
-    if (window.location.port === '5173') {
-      const devHost = window.location.hostname || 'localhost';
-      return `${window.location.protocol}//${devHost}:8000/api`;
-    }
-    // In production behind Nginx or served directly by FastAPI
-    return '/api';
   }
 
   return '/api';

@@ -36,7 +36,7 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_SERVER_IP': JSON.stringify(env.VITE_SERVER_IP || env.SERVER_IP || ''),
       'import.meta.env.VITE_DOMAIN': JSON.stringify(env.VITE_DOMAIN || env.DOMAIN || ''),
       'import.meta.env.VITE_API_BASE': JSON.stringify(env.VITE_API_BASE || ''),
-      'import.meta.env.VITE_BACKEND_URL': JSON.stringify(backendUrl)
+      'import.meta.env.VITE_BACKEND_URL': JSON.stringify(env.VITE_BACKEND_URL || env.BACKEND_URL || '')
     },
     server: {
       port: 5173,
