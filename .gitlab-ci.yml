@@ -12,8 +12,7 @@ variables:
 # ------------------------------------------------------------------------------
 build:
   stage: build
-  tags:
-    - general-shell
+
   script:
     - echo "=== Building Learn Loop Docker Image ==="
     - docker build -t ${IMAGE_NAME}:${CI_COMMIT_REF_NAME} -t ${IMAGE_NAME}:latest .
@@ -24,8 +23,7 @@ build:
 # ------------------------------------------------------------------------------
 test:
   stage: test
-  tags:
-    - general-shell
+
   script:
     - echo "=== Verifying Container Health ==="
     - docker run -d --name ${CONTAINER_NAME}-test -p 8001:8000 ${IMAGE_NAME}:${CI_COMMIT_REF_NAME}
@@ -41,8 +39,7 @@ test:
 # ------------------------------------------------------------------------------
 deploy:
   stage: deploy
-  tags:
-    - general-shell
+
   script:
     - echo "=== Deploying Learn Loop Application ==="
     - docker ps -a -q --filter "name=${CONTAINER_NAME}" | xargs -r docker rm -f
