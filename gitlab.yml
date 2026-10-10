@@ -8,7 +8,7 @@ variables:
   CONTAINER_NAME: "learnloop-container"
 
 # ------------------------------------------------------------------------------
-# Build Stage: Build the multi-stage Docker image
+# Build Stage: Build the Docker image via Docker Compose
 # ------------------------------------------------------------------------------
 build:
   stage: build
@@ -16,7 +16,9 @@ build:
     - general-shell
   script:
     - echo "=== Building Learn Loop Docker Image ==="
-    - docker build -t ${IMAGE_NAME}:${CI_COMMIT_REF_NAME} -t ${IMAGE_NAME}:latest .
+    - docker compose build || docker-compose build
+    - docker tag learnloop:latest ${IMAGE_NAME}:${CI_COMMIT_REF_NAME} || true
+    - docker tag learnloop:latest ${IMAGE_NAME}:latest || true
     - echo "Build completed successfully."
 
 # ------------------------------------------------------------------------------
@@ -37,18 +39,19 @@ test:
     - main
 
 # ------------------------------------------------------------------------------
-# Deploy Stage: Run production container on server
+# Deploy Stage: Run production container with Docker Compose
 # ------------------------------------------------------------------------------
 deploy:
   stage: deploy
   tags:
     - general-shell
   script:
-    - echo "=== Deploying Learn Loop Application ==="
-    - docker ps -a -q --filter "name=${CONTAINER_NAME}" | xargs -r docker rm -f
-    - docker run -d --restart always --name ${CONTAINER_NAME} -p 8000:8000 ${IMAGE_NAME}:${CI_COMMIT_REF_NAME}
+    - echo "=== Starting Learn Loop Application with Docker Compose ==="
+    - docker ps -q --filter "name=${CONTAINER_NAME}" | xargs -r docker rm -f || true
+    - docker compose up -d --remove-orphans || docker-compose up -d --remove-orphans
+    - sleep 5
+    - docker compose ps || docker-compose ps
     - docker image prune -f
-    - docker ps --filter "name=${CONTAINER_NAME}"
-    - echo "=== Deployment Complete! Accessible at port 8000 ==="
+    - echo "=== Deployment Complete! Application started via Docker Compose ==="
   only:
     - main

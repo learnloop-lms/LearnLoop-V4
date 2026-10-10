@@ -18,8 +18,10 @@ class Settings(BaseSettings):
     BASE_DIR: str = BASE_DIR
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL", 
-        "postgresql://postgres:admin123@localhost:5432/learn_loop"
+        "sqlite:///./learn_loop.db"
     )
+    SERVER_IP: str = os.getenv("SERVER_IP", "10.147.20.160")
+    DOMAIN: str = os.getenv("DOMAIN", "")
     MODELS_DIR: str = os.path.join(BASE_DIR, "models")
     ASSETS_DIR: str = os.path.join(BASE_DIR, "assets")
 

@@ -2,7 +2,44 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
 import { getTheme } from '../theme/themeConfig';
 
-const API_BASE = import.meta.env.VITE_API_BASE || (typeof window !== 'undefined' && window.location.port === '5173' ? 'http://localhost:8000/api' : '/api');
+// Determine API Base URL from environment variables or current runtime location
+const resolveApiBase = () => {
+  // 1. Explicit API base URL defined in environment (e.g. VITE_API_BASE="http://10.147.20.160:8000/api" or "/api")
+  if (import.meta.env.VITE_API_BASE) {
+    return import.meta.env.VITE_API_BASE.replace(/\/+$/, '');
+  }
+
+  // 2. Explicit backend URL defined in environment (e.g. VITE_BACKEND_URL="http://10.147.20.160:8000")
+  if (import.meta.env.VITE_BACKEND_URL) {
+    const backend = import.meta.env.VITE_BACKEND_URL.replace(/\/+$/, '');
+    return backend.endsWith('/api') ? backend : `${backend}/api`;
+  }
+
+  // 3. Domain or IP specified in environment (e.g. VITE_SERVER_IP="10.147.20.160" or VITE_DOMAIN="learnloop.edu")
+  const envHost = import.meta.env.VITE_DOMAIN || import.meta.env.VITE_SERVER_IP || import.meta.env.VITE_HOST;
+  if (envHost && envHost.trim()) {
+    const proto = import.meta.env.VITE_PROTOCOL || (typeof window !== 'undefined' ? window.location.protocol : 'http:');
+    const cleanHost = envHost.trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+    const port = import.meta.env.VITE_BACKEND_PORT || '8000';
+    const hostWithPort = cleanHost.includes(':') ? cleanHost : `${cleanHost}:${port}`;
+    return `${proto.replace(/:$/, '')}://${hostWithPort}/api`;
+  }
+
+  // 4. Runtime browser environment
+  if (typeof window !== 'undefined') {
+    // When running Vite dev server locally or over network (port 5173), dynamically use the current hostname
+    if (window.location.port === '5173') {
+      const devHost = window.location.hostname || 'localhost';
+      return `${window.location.protocol}//${devHost}:8000/api`;
+    }
+    // In production behind Nginx or served directly by FastAPI
+    return '/api';
+  }
+
+  return '/api';
+};
+
+const API_BASE = resolveApiBase();
 
 const AuthContext = createContext();
 

@@ -10,9 +10,14 @@ services:
     restart: always
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=sqlite:///./learn_loop.db
-      - SECRET_KEY=learn_loop_super_secret_jwt_key_2026_scholar_research
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./learn_loop.db}
+      - SECRET_KEY=${SECRET_KEY:-learn_loop_super_secret_jwt_key_2026_scholar_research}
+      - SERVER_IP=${SERVER_IP:-10.147.20.160}
+      - DOMAIN=${DOMAIN:-}
+      - PORT=${PORT:-8000}
     volumes:
       - learnloop_data:/app/backend
     healthcheck:
