@@ -2,10 +2,10 @@ import os
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 
-# Load environment variables from backend/.env or root .env
+# Load environment variables from root .env or backend/.env
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-load_dotenv(os.path.join(BASE_DIR, "backend", ".env"))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
+load_dotenv(os.path.join(BASE_DIR, "backend", ".env"))
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Learn Loop - Adaptive Gamified LMS"
@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     BASE_DIR: str = BASE_DIR
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL", 
-        "sqlite:///./learn_loop.db"
+        "postgresql://postgres:admin123@db:5432/learn_loop"
     )
     SERVER_IP: str = os.getenv("SERVER_IP", "10.147.20.160")
     DOMAIN: str = os.getenv("DOMAIN", "")

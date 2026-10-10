@@ -30,7 +30,7 @@ RUN if [ -d "./frontend/dist/assets" ]; then cp -rn ./frontend/dist/assets/* ./a
 
 # Environment configuration
 ENV PYTHONUNBUFFERED=1 \
-    DATABASE_URL="sqlite:///./learn_loop.db" \
+    DATABASE_URL="postgresql://postgres:admin123@db:5432/learn_loop" \
     SECRET_KEY="learn_loop_super_secret_jwt_key_2026_scholar_research" \
     PORT=8000
 
