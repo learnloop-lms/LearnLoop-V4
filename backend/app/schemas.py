@@ -1,6 +1,27 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from urllib.parse import urlparse
+
+def validate_google_docs_link(v: Optional[str]) -> Optional[str]:
+    if not v or not str(v).strip():
+        return None
+    val = str(v).strip()
+    if not val.startswith("http://") and not val.startswith("https://"):
+        val = "https://" + val
+    try:
+        parsed = urlparse(val)
+        host = (parsed.hostname or "").lower()
+        if not (host == "docs.google.com" or host.endswith(".docs.google.com") or 
+                host == "drive.google.com" or host.endswith(".drive.google.com")):
+            raise ValueError(
+                "Only Google Docs / Google Drive links (https://docs.google.com/... or https://drive.google.com/...) are allowed. File uploads and other links are not permitted."
+            )
+        return val
+    except ValueError:
+        raise
+    except Exception:
+        raise ValueError("Invalid Google Docs URL format.")
 
 # -----------------------------------------------------------------------------
 # Auth & User Schemas
@@ -120,6 +141,11 @@ class StudyMaterialCreate(BaseModel):
     pdf_url: Optional[str] = None
     is_locked_bonus: bool = False
 
+    @field_validator("pdf_url")
+    @classmethod
+    def validate_pdf_url(cls, v):
+        return validate_google_docs_link(v)
+
 class StudyMaterialOut(BaseModel):
     id: str
     module_id: str
@@ -199,6 +225,11 @@ class TaskChallengeCreate(BaseModel):
     max_marks: int = 100
     pdf_attachment: Optional[str] = None
     is_locked_bonus: bool = False
+
+    @field_validator("pdf_attachment")
+    @classmethod
+    def validate_pdf_attachment(cls, v):
+        return validate_google_docs_link(v)
 
 class TaskChallengeOut(BaseModel):
     id: str

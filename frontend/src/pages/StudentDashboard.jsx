@@ -1268,7 +1268,7 @@ export default function StudentDashboard() {
                                     rel="noreferrer"
                                     className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-[11px] inline-flex items-center gap-1 shrink-0 transition"
                                   >
-                                    <span>Open Document</span>
+                                    <span>Open Google Doc</span>
                                     <ExternalLink className="w-3 h-3" />
                                   </a>
                                 ) : (

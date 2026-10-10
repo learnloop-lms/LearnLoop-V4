@@ -259,7 +259,7 @@ export default function TaskView() {
               }`}>
                 <div className={`flex items-center gap-2 text-xs ${isLight ? 'text-slate-800' : 'text-slate-300'}`}>
                   <FileText className={`w-4 h-4 ${isLight ? 'text-blue-600' : 'text-cyan-400'}`} />
-                  <span>Download Assignment PDF</span>
+                  <span>Google Docs Assignment</span>
                 </div>
                 <a
                   href={taskData.pdf_attachment}
@@ -267,7 +267,7 @@ export default function TaskView() {
                   rel="noreferrer"
                   className={`text-xs font-semibold ${isLight ? 'text-blue-600 hover:text-blue-700' : 'text-cyan-400 hover:text-cyan-300'}`}
                 >
-                  View Attachment
+                  Open Google Doc
                 </a>
               </div>
             )}

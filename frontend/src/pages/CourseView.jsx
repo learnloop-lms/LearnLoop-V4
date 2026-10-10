@@ -721,7 +721,7 @@ export default function CourseView() {
                                 onClick={handleMarkMaterialRead}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer"
                               >
-                                <span>Open Reference / Drive Document</span>
+                                <span>Open Google Doc</span>
                                 <ExternalLink className="w-3.5 h-3.5" />
                               </a>
                             </div>
@@ -1223,7 +1223,7 @@ export default function CourseView() {
                           rel="noreferrer"
                           className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 dark:text-cyan-400 hover:underline"
                         >
-                          <span>Open Secret Drive / Document</span>
+                          <span>Open Secret Google Doc</span>
                           <ExternalLink className="w-3 h-3" />
                         </a>
                       )}

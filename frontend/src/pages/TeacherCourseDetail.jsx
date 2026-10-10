@@ -9,6 +9,20 @@ import {
   ChevronDown, ChevronUp, AlertCircle, Trash2, FileSpreadsheet, Download, UploadCloud
 } from 'lucide-react';
 
+const isValidGoogleDocsUrl = (url) => {
+  if (!url || !url.trim()) return true;
+  const trimmed = url.trim();
+  const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.toLowerCase();
+    return host === 'docs.google.com' || host.endsWith('.docs.google.com') ||
+           host === 'drive.google.com' || host.endsWith('.drive.google.com');
+  } catch {
+    return false;
+  }
+};
+
 export default function TeacherCourseDetail() {
   const { courseId } = useParams();
   const { API_BASE } = useAuth();
@@ -155,13 +169,20 @@ export default function TeacherCourseDetail() {
 
   const handleAddMaterial = async (e) => {
     e.preventDefault();
+    if (matPdf && !isValidGoogleDocsUrl(matPdf)) {
+      alert('Only Google Docs or Google Drive links (https://docs.google.com/... or https://drive.google.com/...) are allowed. Local file paths and other links are not permitted.');
+      return;
+    }
+    const cleanPdf = matPdf?.trim() 
+      ? (/^https?:\/\//i.test(matPdf.trim()) ? matPdf.trim() : `https://${matPdf.trim()}`)
+      : null;
     try {
       await axios.post(`${API_BASE}/courses/modules/${activeModuleId}/materials`, {
         module_id: activeModuleId,
         learning_level: matLevel,
         title: matTitle,
         content_html: matContent,
-        pdf_url: matPdf || null,
+        pdf_url: cleanPdf,
         is_locked_bonus: matIsBonus
       });
       setShowMaterialModal(false);
@@ -306,6 +327,13 @@ export default function TeacherCourseDetail() {
 
   const handleAddTask = async (e) => {
     e.preventDefault();
+    if (taskPdf && !isValidGoogleDocsUrl(taskPdf)) {
+      alert('Only Google Docs or Google Drive links (https://docs.google.com/... or https://drive.google.com/...) are allowed. Local file paths and other links are not permitted.');
+      return;
+    }
+    const cleanPdf = taskPdf?.trim()
+      ? (/^https?:\/\//i.test(taskPdf.trim()) ? taskPdf.trim() : `https://${taskPdf.trim()}`)
+      : null;
     try {
       await axios.post(`${API_BASE}/tasks/challenges`, {
         module_id: activeModuleId,
@@ -315,7 +343,7 @@ export default function TeacherCourseDetail() {
         task_type: taskType,
         title: taskTitle,
         problem_statement: taskStatement,
-        pdf_attachment: taskPdf || null,
+        pdf_attachment: cleanPdf,
         max_marks: parseInt(taskMaxMarks),
         is_locked_bonus: taskIsBonus
       });
@@ -858,14 +886,26 @@ export default function TeacherCourseDetail() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold mb-1">Document / Google Drive Link / Local File Path</label>
+                <label className="block text-xs font-bold mb-1">
+                  Google Docs Link (Optional)
+                  <span className="block text-[11px] font-normal text-slate-500">Only Google Docs or Google Drive links allowed (no file uploads)</span>
+                </label>
                 <input
-                  type="text"
+                  type="url"
                   value={matPdf}
                   onChange={(e) => setMatPdf(e.target.value)}
-                  placeholder="e.g. https://drive.google.com/... or C:/notes/module1.pdf or /materials/guide.pdf"
-                  className="w-full p-2.5 rounded-xl border text-sm bg-slate-50 dark:bg-slate-800"
+                  placeholder="https://docs.google.com/document/d/... or https://drive.google.com/..."
+                  className={`w-full p-2.5 rounded-xl border text-sm ${
+                    matPdf && !isValidGoogleDocsUrl(matPdf) 
+                      ? 'border-red-500 bg-red-50/30 dark:bg-red-950/20' 
+                      : 'bg-slate-50 dark:bg-slate-800'
+                  }`}
                 />
+                {matPdf && !isValidGoogleDocsUrl(matPdf) && (
+                  <p className="text-red-500 text-[11px] mt-1 font-medium">
+                    ⚠️ Must be a valid Google Docs or Google Drive link (e.g. https://docs.google.com/document/d/...)
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center gap-2.5 p-3 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800">
@@ -1160,14 +1200,26 @@ export default function TeacherCourseDetail() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold mb-1">Document / Google Drive Link / Local Path</label>
+                  <label className="block text-xs font-bold mb-1">
+                    Google Docs Link (Optional)
+                    <span className="block text-[11px] font-normal text-slate-500">Only Google Docs or Google Drive links allowed (no file uploads)</span>
+                  </label>
                   <input
-                    type="text"
+                    type="url"
                     value={taskPdf}
                     onChange={(e) => setTaskPdf(e.target.value)}
-                    placeholder="e.g. https://drive.google.com/... or C:/assignments/sheet.pdf"
-                    className="w-full p-2 rounded-xl border text-sm bg-slate-50 dark:bg-slate-800"
+                    placeholder="https://docs.google.com/document/d/..."
+                    className={`w-full p-2 rounded-xl border text-sm ${
+                      taskPdf && !isValidGoogleDocsUrl(taskPdf) 
+                        ? 'border-red-500 bg-red-50/30 dark:bg-red-950/20' 
+                        : 'bg-slate-50 dark:bg-slate-800'
+                    }`}
                   />
+                  {taskPdf && !isValidGoogleDocsUrl(taskPdf) && (
+                    <p className="text-red-500 text-[11px] mt-1 font-medium">
+                      ⚠️ Must be a valid Google Docs or Google Drive link
+                    </p>
+                  )}
                 </div>
 
                 <div>
