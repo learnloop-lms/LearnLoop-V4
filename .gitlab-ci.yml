@@ -1,33 +1,33 @@
 stages:
-  - build
-  - test
   - deploy
-
-variables:
-  IMAGE_NAME: "learnloop-app"
-  CONTAINER_NAME: "learnloop-container"
 
 default:
   tags:
     - general-shell
 
-# Build Stage: Build Docker image
-build:
-  stage: build
-  script:
-    - echo "=== Building Learn Loop Docker Image ==="
-    - docker build -t "${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}" -t "${IMAGE_NAME}:latest" .
-    - echo "Build completed successfully."
-
-# Deploy Stage: Run production container
+# Deployment pipeline: builds and starts containers with latest versions
 deploy:
   stage: deploy
+  before_script:
+    # 1. Inject .env from GitLab CI/CD Variables if configured
+    - touch .env
+    - |
+      if [ -n "$DOTENV_FILE" ]; then
+        echo "Injecting .env from GitLab CI/CD File variable (DOTENV_FILE)..."
+        cp "$DOTENV_FILE" .env
+      elif [ -n "$ENV_CONTENT" ]; then
+        echo "Injecting .env from GitLab CI/CD Variable (ENV_CONTENT)..."
+        echo "$ENV_CONTENT" > .env
+      fi
   script:
-    - echo "=== Deploying Learn Loop Application ==="
-    - docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
-    - docker run -d --restart always --name "${CONTAINER_NAME}" -p 8000:8000 "${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}"
+    - echo "=== Pulling external service images (e.g. PostgreSQL) ==="
+    - docker compose pull --ignore-buildable || true
+    - echo "=== Building new container versions ==="
+    - docker compose build --pull
+    - echo "=== Starting services with latest container versions ==="
+    - docker compose up -d --force-recreate --remove-orphans
     - docker image prune -f
-    - docker ps --filter "name=^/${CONTAINER_NAME}$"
-    - echo "=== Deployment Complete! Accessible at port 8000 ==="
+    - docker compose ps
+    - echo "=== Deployment Complete ==="
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
