@@ -1,6 +1,21 @@
 # Learn Loop - Adaptive Gamified Learning Management System
 # Production Application Container
 
+# ==============================================================================
+# Stage 1: Build Frontend SPA Assets (Node 20+)
+# ==============================================================================
+FROM node:20-slim AS frontend-builder
+WORKDIR /app/frontend
+
+COPY frontend/package*.json ./
+RUN npm ci || npm install
+
+COPY frontend/ ./
+RUN npm run build
+
+# ==============================================================================
+# Stage 2: Production Python Application Container
+# ==============================================================================
 FROM python:3.10-slim
 
 # Install system dependencies (compilers for LMS coding tasks, curl for healthcheck)
@@ -17,11 +32,11 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application directories and assets
+# Copy application directories, models, assets, and built frontend
 COPY backend ./backend
 COPY models ./models
 COPY assets ./assets
-COPY frontend/dist ./frontend/dist
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 COPY database_schema.sql ./
 COPY README.md ./
 
