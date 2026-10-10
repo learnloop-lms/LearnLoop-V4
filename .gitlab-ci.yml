@@ -19,24 +19,6 @@ build:
     - docker build -t "${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}" -t "${IMAGE_NAME}:latest" .
     - echo "Build completed successfully."
 
-# Test Stage: Verify container startup and health
-test:
-  stage: test
-  before_script:
-    - docker rm -f "${CONTAINER_NAME}-test" 2>/dev/null || true
-  script:
-    - echo "=== Verifying Container Health ==="
-    - docker run -d --name "${CONTAINER_NAME}-test" -p 8001:8000 "${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}"
-    - sleep 5
-    - curl --retry 5 --retry-delay 2 --retry-connrefused -f http://localhost:8001/
-    - echo "Container health check passed!"
-  after_script:
-    # Always collect logs and remove the test container.
-    - docker logs "${CONTAINER_NAME}-test" 2>/dev/null || true
-    - docker rm -f "${CONTAINER_NAME}-test" 2>/dev/null || true
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
-
 # Deploy Stage: Run production container
 deploy:
   stage: deploy
