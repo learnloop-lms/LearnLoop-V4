@@ -11,52 +11,41 @@ default:
   tags:
     - general-shell
 
-# ------------------------------------------------------------------------------
 # Build Stage: Build Docker image
-# ------------------------------------------------------------------------------
 build:
   stage: build
   script:
     - echo "=== Building Learn Loop Docker Image ==="
-    - docker build -t ${IMAGE_NAME}:${CI_COMMIT_REF_SLUG} -t
-${IMAGE_NAME}:latest .
+    - docker build -t "${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}" -t "${IMAGE_NAME}:latest" .
     - echo "Build completed successfully."
 
-# ------------------------------------------------------------------------------
-# Test Stage: Container startup and healthcheck verification
-# ------------------------------------------------------------------------------
+# Test Stage: Verify container startup and health
 test:
   stage: test
   before_script:
-    # Clean up any leftover test container from previously aborted runs
-    - docker rm -f ${CONTAINER_NAME}-test 2>/dev/null || true
+    - docker rm -f "${CONTAINER_NAME}-test" 2>/dev/null || true
   script:
     - echo "=== Verifying Container Health ==="
-    - docker run -d --name ${CONTAINER_NAME}-test -p 8001:8000
-${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}
+    - docker run -d --name "${CONTAINER_NAME}-test" -p 8001:8000 "${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}"
     - sleep 5
-    - curl -f http://localhost:8001/
+    - curl --retry 5 --retry-delay 2 --retry-connrefused -f http://localhost:8001/
     - echo "Container health check passed!"
   after_script:
-    # after_script runs even if curl fails or the test errors out,
-preventing stuck containers
-    - docker logs ${CONTAINER_NAME}-test 2>/dev/null || true
-    - docker rm -f ${CONTAINER_NAME}-test 2>/dev/null || true
+    # Always collect logs and remove the test container.
+    - docker logs "${CONTAINER_NAME}-test" 2>/dev/null || true
+    - docker rm -f "${CONTAINER_NAME}-test" 2>/dev/null || true
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+    - if: '$CI_COMMIT_BRANCH == "main"'
 
-# ------------------------------------------------------------------------------
-# Deploy Stage: Run production container on server
-# ------------------------------------------------------------------------------
+# Deploy Stage: Run production container
 deploy:
   stage: deploy
   script:
     - echo "=== Deploying Learn Loop Application ==="
-    - docker rm -f ${CONTAINER_NAME} 2>/dev/null || true
-    - docker run -d --restart always --name ${CONTAINER_NAME} -p
-8000:8000 ${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}
+    - docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+    - docker run -d --restart always --name "${CONTAINER_NAME}" -p 8000:8000 "${IMAGE_NAME}:${CI_COMMIT_REF_SLUG}"
     - docker image prune -f
     - docker ps --filter "name=^/${CONTAINER_NAME}$"
     - echo "=== Deployment Complete! Accessible at port 8000 ==="
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+    - if: '$CI_COMMIT_BRANCH == "main"
