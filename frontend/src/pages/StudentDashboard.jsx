@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 
 import AppreciationModal from '../components/AppreciationModal';
+import GameElementsTourModal from '../components/GameElementsTourModal';
 
 export default function StudentDashboard() {
   const { user, activeTheme, API_BASE, logout, fetchProfile } = useAuth();
@@ -26,6 +27,7 @@ export default function StudentDashboard() {
   const [showMysteryModal, setShowMysteryModal] = useState(false);
   const [showRewardsModal, setShowRewardsModal] = useState(false);
   const [showAppreciationModal, setShowAppreciationModal] = useState(false);
+  const [showTourModal, setShowTourModal] = useState(false);
   const [mysteryVault, setMysteryVault] = useState(null);
   const [loadingMystery, setLoadingMystery] = useState(false);
   const [selectedStackedModule, setSelectedStackedModule] = useState(null);
@@ -53,8 +55,21 @@ export default function StudentDashboard() {
       setEditGender(user.gender || 'female');
       setEditDept(user.department || '');
       setEditEmail(user.email || '');
+
+      // Auto-show game elements tour on student's first visit
+      const hasSeen = localStorage.getItem(`seen_game_elements_tour_${user.id}`);
+      if (!hasSeen) {
+        setShowTourModal(true);
+      }
     }
   }, [user]);
+
+  const handleCloseTour = () => {
+    if (user?.id) {
+      localStorage.setItem(`seen_game_elements_tour_${user.id}`, 'true');
+    }
+    setShowTourModal(false);
+  };
 
   const fetchMyCourses = async () => {
     try {
@@ -455,14 +470,26 @@ export default function StudentDashboard() {
               {/* (EXACTLY WHERE THE GREEN ARROW POINTS IN THE USER'S IMAGE)   */}
               {/* ============================================================= */}
               <div className={`p-6 rounded-3xl ${frostedCard}`}>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                    <Zap className="w-4 h-4 text-amber-500" />
-                    Student Game Assets & Lives Inventory
-                  </h3>
-                  <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
-                    Cognitive Tier: {user?.leaderboard_level || 'Jogger'}
-                  </span>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-amber-500" />
+                      Student Game Assets & Lives Inventory
+                    </h3>
+                    <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
+                      Cognitive Tier: {user?.leaderboard_level || 'Jogger'}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowTourModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition cursor-pointer shadow-xs"
+                    title="View Rules, Costs, and Usage for All 10 Game Elements"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    <span>🎮 Game Elements & Rules Guide</span>
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1436,6 +1463,12 @@ export default function StudentDashboard() {
         subtitle={`Congratulations ${user?.name}! Your Pioneer perseverance in ${user?.leaderboard_level || 'Stepper'} tier is commended.`}
         coinsAwarded={user?.leaderboard_level === 'Glider' ? 500 : user?.leaderboard_level === 'Jogger' ? 250 : 100}
         archetype={user?.pt_ls || 'Pioneers'}
+      />
+
+      {/* GAME ELEMENTS & LIFELINES TOUR MODAL */}
+      <GameElementsTourModal
+        isOpen={showTourModal}
+        onClose={handleCloseTour}
       />
 
     </div>

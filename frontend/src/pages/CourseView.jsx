@@ -7,7 +7,7 @@ import { useVisionaryFeedback } from '../context/VisionaryFeedbackContext';
 import { 
   ArrowLeft, BookOpen, CheckCircle, Clock, Zap, 
   HelpCircle, Code2, Lock, ChevronDown, ChevronUp, MessageSquare, Plus, Award, ExternalLink,
-  Check, AlertCircle, ArrowRight, Sparkles, Trophy
+  Check, AlertCircle, ArrowRight, Sparkles, Trophy, Eye, X, XCircle
 } from 'lucide-react';
 
 export default function CourseView() {
@@ -33,6 +33,12 @@ export default function CourseView() {
   const [revalReason, setRevalReason] = useState('');
   const [submittingReval, setSubmittingReval] = useState(false);
   const [revalMsg, setRevalMsg] = useState('');
+  const [showQuizReviewModal, setShowQuizReviewModal] = useState(false);
+  const [quizReviewData, setQuizReviewData] = useState(null);
+  const [loadingQuizReview, setLoadingQuizReview] = useState(false);
+  const [quizRevalReason, setQuizRevalReason] = useState('');
+  const [submittingQuizReval, setSubmittingQuizReval] = useState(false);
+  const [quizRevalMsg, setQuizRevalMsg] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -226,6 +232,43 @@ export default function CourseView() {
       alert(err.response?.data?.detail || 'Failed to submit revaluation request.');
     } finally {
       setSubmittingReval(false);
+    }
+  };
+
+  const handleOpenQuizReview = async (moduleId) => {
+    setLoadingQuizReview(true);
+    setShowQuizReviewModal(true);
+    setQuizRevalMsg('');
+    try {
+      const res = await axios.get(`${API_BASE}/quizzes/module/${moduleId}/my-submission`);
+      setQuizReviewData(res.data);
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.detail || 'No past quiz submission found for this module.');
+      setShowQuizReviewModal(false);
+    } finally {
+      setLoadingQuizReview(false);
+    }
+  };
+
+  const handleRequestQuizRevaluation = async (e) => {
+    e.preventDefault();
+    if (!quizRevalReason.trim() || !quizReviewData?.submission_id) return;
+    setSubmittingQuizReval(true);
+    try {
+      await axios.post(`${API_BASE}/revaluations`, {
+        assessment_type: 'quiz',
+        assessment_id: quizReviewData.submission_id,
+        student_reason: quizRevalReason
+      });
+      setQuizRevalMsg('Quiz revaluation request successfully submitted to your instructor!');
+      setTimeout(() => {
+        setQuizRevalReason('');
+      }, 3000);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to submit quiz revaluation.');
+    } finally {
+      setSubmittingQuizReval(false);
     }
   };
 
@@ -822,13 +865,22 @@ export default function CourseView() {
                           </p>
                         </div>
                         {/* Disabled button as requested: "if they redirect to assignment that time only assignment has to enable it and quiz has to disable" */}
-                        <button
-                          disabled
-                          className="px-5 py-2.5 rounded-xl bg-slate-300 dark:bg-slate-800 text-slate-500 font-bold text-xs cursor-not-allowed flex items-center gap-2 opacity-70"
-                        >
-                          <Lock className="w-4 h-4" />
-                          Quiz Passed & Completed (Disabled)
-                        </button>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <button
+                            disabled
+                            className="px-5 py-2.5 rounded-xl bg-slate-300 dark:bg-slate-800 text-slate-500 font-bold text-xs cursor-not-allowed flex items-center gap-2 opacity-70"
+                          >
+                            <Lock className="w-4 h-4" />
+                            Quiz Passed & Completed (Disabled)
+                          </button>
+                          <button
+                            onClick={() => handleOpenQuizReview(activeModule.id)}
+                            className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-500/20 transition flex items-center gap-2 cursor-pointer"
+                          >
+                            <Eye className="w-4 h-4" />
+                            Review Questions & Answers
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -847,13 +899,24 @@ export default function CourseView() {
                         <p className="text-xs text-slate-500">
                           10 questions calibrated to your cognitive tier. Lifelines (50:50, Hint, Ask Expert) are available inside.
                         </p>
-                        <button
-                          onClick={() => navigate(`/quiz/${activeModule.id}`)}
-                          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-red-600 text-white font-bold text-xs shadow-lg shadow-amber-500/20 hover:opacity-95 transition flex items-center gap-2 cursor-pointer"
-                        >
-                          <Zap className="w-4 h-4" />
-                          {progress?.quiz_completed ? 'Retake Adaptive Quiz (10 Qs)' : 'Take Adaptive Quiz (10 Qs)'}
-                        </button>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <button
+                            onClick={() => navigate(`/quiz/${activeModule.id}`)}
+                            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-red-600 text-white font-bold text-xs shadow-lg shadow-amber-500/20 hover:opacity-95 transition flex items-center gap-2 cursor-pointer"
+                          >
+                            <Zap className="w-4 h-4" />
+                            {progress?.quiz_completed ? 'Retake Adaptive Quiz (10 Qs)' : 'Take Adaptive Quiz (10 Qs)'}
+                          </button>
+                          {progress?.quiz_completed && (
+                            <button
+                              onClick={() => handleOpenQuizReview(activeModule.id)}
+                              className="px-5 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-800 text-white font-bold text-xs transition flex items-center gap-2 cursor-pointer"
+                            >
+                              <Eye className="w-4 h-4" />
+                              Review Past Attempt
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1414,6 +1477,155 @@ export default function CourseView() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* STUDENT QUIZ REVIEW & REVALUATION MODAL */}
+      {showQuizReviewModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200">
+          <div className={`w-full max-w-3xl max-h-[90vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden ${
+            isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-slate-900 border-slate-800 text-white'
+          }`}>
+            {/* Header */}
+            <div className={`p-5 sm:p-6 border-b flex items-center justify-between shrink-0 ${
+              isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/80 border-slate-800'
+            }`}>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-cyan-400">
+                    Quiz Submission Review
+                  </span>
+                  {quizReviewData && (
+                    <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+                      quizReviewData.passed
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300'
+                        : 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300'
+                    }`}>
+                      {quizReviewData.passed ? 'Passed' : 'Needs Retake'} • Score: {quizReviewData.score}/10
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-lg font-black mt-1">
+                  Module {activeModule?.module_no}: {activeModule?.concept_name}
+                </h3>
+              </div>
+              <button
+                onClick={() => { setShowQuizReviewModal(false); setQuizReviewData(null); setQuizRevalMsg(''); }}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Content (Scrollable) */}
+            <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1 text-xs">
+              {loadingQuizReview ? (
+                <div className="py-12 text-center text-slate-400 font-bold">
+                  Loading quiz questions & submission review...
+                </div>
+              ) : !quizReviewData?.breakdown || quizReviewData.breakdown.length === 0 ? (
+                <div className="py-12 text-center text-slate-400">
+                  No question breakdown available for this attempt.
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-4">
+                    {quizReviewData.breakdown.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className={`p-4 rounded-2xl border ${
+                          item.is_correct
+                            ? isLight ? 'bg-emerald-50/50 border-emerald-200' : 'bg-emerald-950/20 border-emerald-900/60'
+                            : isLight ? 'bg-rose-50/50 border-rose-200' : 'bg-rose-950/20 border-rose-900/60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <span className="font-bold text-slate-500">Q{idx + 1}.</span>
+                          <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border shrink-0 ${
+                            item.is_correct
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300'
+                              : 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950 dark:text-rose-300'
+                          }`}>
+                            {item.is_correct ? 'Correct (+1 mark)' : 'Incorrect (0 marks)'}
+                          </span>
+                        </div>
+
+                        <div className="font-medium text-slate-800 dark:text-slate-200 whitespace-pre-wrap mb-3 leading-relaxed">
+                          {item.question_text}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-200/60 dark:border-slate-800/80">
+                          <div className={`p-2.5 rounded-xl border ${
+                            item.is_correct
+                              ? 'bg-emerald-100/60 dark:bg-emerald-950/40 border-emerald-300 text-emerald-900 dark:text-emerald-200'
+                              : 'bg-rose-100/60 dark:bg-rose-950/40 border-rose-300 text-rose-900 dark:text-rose-200'
+                          }`}>
+                            <span className="text-[10px] uppercase font-bold block opacity-75">Your Answer</span>
+                            <span className="font-semibold">{item.student_answer || '(No answer provided)'}</span>
+                          </div>
+
+                          <div className="p-2.5 rounded-xl border bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200">
+                            <span className="text-[10px] uppercase font-bold block text-slate-400">Correct Answer</span>
+                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">{item.correct_answer}</span>
+                          </div>
+                        </div>
+
+                        {item.explanation && (
+                          <div className="mt-2.5 p-2.5 rounded-xl bg-white/60 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                            <span className="font-bold text-slate-700 dark:text-slate-300">Explanation: </span>
+                            {item.explanation}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Revaluation Appeal Form */}
+                  <div className={`mt-6 p-5 rounded-2xl border ${
+                    isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'
+                  }`}>
+                    <h4 className="font-bold text-sm mb-1 flex items-center gap-2">
+                      <HelpCircle className="w-4 h-4 text-purple-500" />
+                      Request Quiz Revaluation / Appeal Marks
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mb-3">
+                      Think an answer was marked incorrectly, or found an alternate valid solution? Send an appeal directly to your instructor for review.
+                    </p>
+
+                    <form onSubmit={handleRequestQuizRevaluation} className="space-y-3">
+                      <textarea
+                        rows={3}
+                        required
+                        placeholder="Specify which question(s) and why you believe your submitted answer should be awarded marks..."
+                        value={quizRevalReason}
+                        onChange={(e) => setQuizRevalReason(e.target.value)}
+                        className={`w-full p-3 rounded-xl border text-xs focus:outline-none focus:border-purple-500 ${
+                          isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-900 border-slate-700 text-white'
+                        }`}
+                      />
+
+                      {quizRevalMsg && (
+                        <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center gap-2">
+                          <CheckCircle className="w-4 h-4 shrink-0" />
+                          <span>{quizRevalMsg}</span>
+                        </div>
+                      )}
+
+                      <div className="flex justify-end">
+                        <button
+                          type="submit"
+                          disabled={submittingQuizReval || !quizRevalReason.trim()}
+                          className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold text-xs cursor-pointer shadow-md transition"
+                        >
+                          {submittingQuizReval ? 'Sending Appeal...' : 'Submit Quiz Revaluation Appeal'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

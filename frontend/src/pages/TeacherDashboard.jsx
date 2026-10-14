@@ -6,7 +6,7 @@ import { useTheme, ThemeToggle } from '../context/ThemeContext';
 import { 
   BookOpen, Plus, Users, CheckCircle, Clock, Award, 
   Code2, LogOut, ChevronRight, Check, X, Sparkles, MessageSquare, ArrowRight,
-  Filter, Edit3, Layers, FileText
+  Filter, Edit3, Layers, FileText, Zap
 } from 'lucide-react';
 
 export default function TeacherDashboard() {
@@ -837,41 +837,96 @@ export default function TeacherDashboard() {
                       </div>
                     </div>
 
-                    {/* Question / Problem Statement */}
-                    {r.question_text && (
-                      <div className={`p-4 rounded-2xl border ${
-                        isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/60 border-slate-800'
-                      }`}>
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1.5">
-                          <BookOpen className="w-3.5 h-3.5 text-blue-500" />
-                          Task Problem Statement (Question)
-                        </h4>
-                        <p className="text-xs leading-relaxed font-mono whitespace-pre-wrap text-slate-800 dark:text-slate-200">
-                          {r.question_text}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Student's Answer / Code Submission */}
-                    <div className={`p-4 rounded-2xl border ${
-                      isLight ? 'bg-slate-900 text-slate-100 border-slate-800' : 'bg-black/80 text-emerald-400 border-slate-800'
-                    }`}>
-                      <div className="flex items-center justify-between mb-2 pb-1 border-b border-slate-800">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                          <Code2 className="w-3.5 h-3.5 text-emerald-400" />
-                          Student's Submitted Solution {r.programming_language ? `(${r.programming_language})` : ''}
-                        </h4>
-                      </div>
-                      <pre className="text-xs font-mono overflow-x-auto max-h-60 leading-relaxed">
-                        {r.submitted_code || r.submitted_text || 'No code provided.'}
-                      </pre>
-                      {r.compiler_output && (
-                        <div className="mt-3 pt-2 border-t border-slate-800 text-[11px] text-slate-400">
-                          <span className="font-bold text-slate-300">Compiler Output: </span>
-                          <span className="font-mono">{r.compiler_output}</span>
+                    {/* Assessment Details: Quiz vs Task */}
+                    {r.assessment_type === 'quiz' ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                            <Zap className="w-3.5 h-3.5 text-amber-500" />
+                            Quiz Questions & Answers Breakdown ({r.quiz_breakdown?.length || 0} Questions)
+                          </h4>
                         </div>
-                      )}
-                    </div>
+                        {(!r.quiz_breakdown || r.quiz_breakdown.length === 0) ? (
+                          <div className="p-4 rounded-2xl border text-xs text-slate-400">
+                            No question breakdown recorded for this quiz submission.
+                          </div>
+                        ) : (
+                          <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
+                            {r.quiz_breakdown.map((q, qIdx) => (
+                              <div
+                                key={qIdx}
+                                className={`p-3.5 rounded-xl border text-xs ${
+                                  q.is_correct
+                                    ? isLight ? 'bg-emerald-50/60 border-emerald-200' : 'bg-emerald-950/20 border-emerald-900/50'
+                                    : isLight ? 'bg-rose-50/60 border-rose-200' : 'bg-rose-950/20 border-rose-900/50'
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-2 mb-1.5">
+                                  <span className="font-bold text-slate-700 dark:text-slate-200">
+                                    Q{qIdx + 1}. {q.question_text}
+                                  </span>
+                                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border shrink-0 ${
+                                    q.is_correct
+                                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300'
+                                      : 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950 dark:text-rose-300'
+                                  }`}>
+                                    {q.is_correct ? 'Correct (+1)' : 'Wrong (0)'}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1">
+                                  <div>
+                                    <span className="text-slate-400 font-bold block text-[10px] uppercase">Student's Answer:</span>
+                                    <span className="font-semibold text-slate-800 dark:text-slate-200">{q.student_answer || '(Blank)'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 font-bold block text-[10px] uppercase">Teacher's Answer:</span>
+                                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">{q.correct_answer}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        {/* Question / Problem Statement */}
+                        {r.question_text && (
+                          <div className={`p-4 rounded-2xl border ${
+                            isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/60 border-slate-800'
+                          }`}>
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-1.5">
+                              <BookOpen className="w-3.5 h-3.5 text-blue-500" />
+                              Task Problem Statement (Question)
+                            </h4>
+                            <p className="text-xs leading-relaxed font-mono whitespace-pre-wrap text-slate-800 dark:text-slate-200">
+                              {r.question_text}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Student's Answer / Code Submission */}
+                        <div className={`p-4 rounded-2xl border ${
+                          isLight ? 'bg-slate-900 text-slate-100 border-slate-800' : 'bg-black/80 text-emerald-400 border-slate-800'
+                        }`}>
+                          <div className="flex items-center justify-between mb-2 pb-1 border-b border-slate-800">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                              <Code2 className="w-3.5 h-3.5 text-emerald-400" />
+                              Student's Submitted Solution {r.programming_language ? `(${r.programming_language})` : ''}
+                            </h4>
+                          </div>
+                          <pre className="text-xs font-mono overflow-x-auto max-h-60 leading-relaxed">
+                            {r.submitted_code || r.submitted_text || 'No code provided.'}
+                          </pre>
+                          {r.compiler_output && (
+                            <div className="mt-3 pt-2 border-t border-slate-800 text-[11px] text-slate-400">
+                              <span className="font-bold text-slate-300">Compiler Output: </span>
+                              <span className="font-mono">{r.compiler_output}</span>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    )}
 
                     {/* Previous Feedback (if any) */}
                     {r.teacher_feedback && (

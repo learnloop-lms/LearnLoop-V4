@@ -28,6 +28,7 @@ export default function QuizView() {
   const [submitting, setSubmitting] = useState(false);
   const [submissionResult, setSubmissionResult] = useState(null);
   const [showRatingModal, setShowRatingModal] = useState(false);
+  const [toastMsg, setToastMsg] = useState(null); // { message, type }
 
   // Appreciation Animation Modal (Happy & Sad)
   const [showAppreciation, setShowAppreciation] = useState(false);
@@ -40,8 +41,23 @@ export default function QuizView() {
 
   const navigate = useNavigate();
 
+  const showToast = (message, type = 'success') => {
+    setToastMsg({ message, type });
+    setTimeout(() => setToastMsg(null), 3500);
+  };
+
   useEffect(() => {
     fetchQuiz();
+    // Auto-enter Game Zone Fullscreen upon entering quiz arena
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+    return () => {
+      // Exit fullscreen automatically upon leaving quiz
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
   }, [moduleId]);
 
   // Countdown timer
@@ -84,16 +100,9 @@ export default function QuizView() {
     const handlePaste = (e) => { e.preventDefault(); setShowStrikeWarning(true); };
     const handleContextMenu = (e) => { e.preventDefault(); };
 
-    // Tab switch & window blur (Alt+Tab, Windows key, etc.)
+    // Genuine Tab switch detection (Alt+Tab, Windows key, new tab, switching away)
     const handleVisibilityChange = () => {
       if (document.hidden && !submissionResult) {
-        setStrikes((prev) => prev + 1);
-        setShowStrikeWarning(true);
-      }
-    };
-
-    const handleBlur = () => {
-      if (!submissionResult) {
         setStrikes((prev) => prev + 1);
         setShowStrikeWarning(true);
       }
@@ -109,7 +118,6 @@ export default function QuizView() {
     window.addEventListener('paste', handlePaste);
     window.addEventListener('contextmenu', handleContextMenu);
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('blur', handleBlur);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
 
     return () => {
@@ -119,7 +127,6 @@ export default function QuizView() {
       window.removeEventListener('paste', handlePaste);
       window.removeEventListener('contextmenu', handleContextMenu);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('blur', handleBlur);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, [submissionResult]);
@@ -139,7 +146,7 @@ export default function QuizView() {
       const res = await axios.get(`${API_BASE}/quizzes/module/${moduleId}`);
       setQuizData(res.data);
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to load quiz.');
+      showToast(err.response?.data?.detail || 'Failed to load quiz.', 'error');
       navigate(-1);
     }
   };
@@ -188,9 +195,9 @@ export default function QuizView() {
       }
 
       await fetchProfile();
-      alert(res.data.message || 'Lifeline activated!');
+      showToast(res.data.message || 'Lifeline activated!', 'success');
     } catch (err) {
-      alert(err.response?.data?.detail || 'Cannot use lifeline.');
+      showToast(err.response?.data?.detail || 'Cannot use lifeline.', 'error');
     }
   };
 
@@ -200,7 +207,7 @@ export default function QuizView() {
     try {
       const formatted = (quizData?.questions || []).map((q) => ({
         question_id: q.id,
-        chosen_option: answers[q.id]?.split(',')[0] || 'A', // first choice for double dip
+        chosen_option: (answers[q.id] || '').split(',')[0] || (answers[q.id] || ''),
         lifelines_used: []
       }));
 
@@ -209,6 +216,11 @@ export default function QuizView() {
         answers: formatted,
         ttq_seconds: 600 - secondsRemaining
       });
+
+      // Exit fullscreen automatically upon submission
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
 
       setSubmissionResult(res.data);
       await fetchProfile();
@@ -223,7 +235,7 @@ export default function QuizView() {
         setShowAppreciation(true);
       }
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to submit quiz.');
+      showToast(err.response?.data?.detail || 'Failed to submit quiz.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -231,6 +243,9 @@ export default function QuizView() {
 
   const handleAppreciationClose = () => {
     setShowAppreciation(false);
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
     if (appreciationType === 'happy') {
       navigate(`/task/${moduleId}`);
     } else {
@@ -458,11 +473,157 @@ export default function QuizView() {
                 </span>
               </div>
 
-              <h2 className={`text-base md:text-xl font-bold leading-relaxed mb-6 ${
-                isLight ? 'text-slate-900' : 'text-white'
-              }`}>
-                {currentQ.question_text}
-              </h2>
+              {/* Question Text with Match Formatting and Monospace Code Blocks */}
+              <div className="mb-6">
+                {(() => {
+                  const qText = currentQ.question_text || '';
+                  
+                  // Match the Following Parser (List - I and List - II)
+                  const isMatchFormat = 
+                    (qText.includes('List - I') || qText.includes('List I') || qText.includes('Column A') || qText.includes('Column - I')) &&
+                    (qText.includes('List - II') || qText.includes('List II') || qText.includes('Column B') || qText.includes('Column - II'));
+
+                  if (isMatchFormat) {
+                    const lines = qText.split('\n').map((l) => l.trim()).filter(Boolean);
+                    const introLines = [];
+                    const colA = [];
+                    const colB = [];
+                    let activeList = null;
+
+                    for (const line of lines) {
+                      if (/^(List\s*-?\s*I\b|Column\s*-?\s*A\b)/i.test(line)) {
+                        if (line.includes('\t') || /List\s*-?\s*II/i.test(line)) continue;
+                        activeList = 'A';
+                        continue;
+                      }
+                      if (/^(List\s*-?\s*II\b|Column\s*-?\s*B\b)/i.test(line)) {
+                        activeList = 'B';
+                        continue;
+                      }
+
+                      if (line.includes('\t')) {
+                        const parts = line.split('\t').map((p) => p.trim()).filter(Boolean);
+                        if (parts.length >= 2) {
+                          colA.push(parts[0]);
+                          colB.push(parts[1]);
+                          continue;
+                        }
+                      }
+
+                      if (activeList === 'A') colA.push(line);
+                      else if (activeList === 'B') colB.push(line);
+                      else introLines.push(line);
+                    }
+
+                    if (colA.length > 0 && colB.length > 0) {
+                      return (
+                        <div className="space-y-4">
+                          {introLines.length > 0 && (
+                            <h2 className={`text-base md:text-xl font-bold leading-relaxed ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                              {introLines.join(' ')}
+                            </h2>
+                          )}
+                          <div className={`p-4 md:p-5 rounded-2xl border ${
+                            isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/70 border-slate-800'
+                          }`}>
+                            <div className="grid grid-cols-2 gap-4 pb-2 border-b border-slate-200 dark:border-slate-800 text-xs font-black uppercase tracking-wider">
+                              <span className="text-blue-600 dark:text-cyan-400">List - I</span>
+                              <span className="text-purple-600 dark:text-purple-400">List - II</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 pt-3 text-xs md:text-sm font-mono">
+                              <div className="space-y-2">
+                                {colA.map((item, i) => (
+                                  <div key={i} className={`p-2.5 rounded-xl border ${
+                                    isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-slate-200'
+                                  }`}>
+                                    {item}
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="space-y-2">
+                                {colB.map((item, i) => (
+                                  <div key={i} className={`p-2.5 rounded-xl border ${
+                                    isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-slate-200'
+                                  }`}>
+                                    {item}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                  }
+
+                  // Code Snippet formatting for Programming Questions
+                  const hasCode = 
+                    qText.includes('```') || 
+                    qText.includes('public class') || 
+                    qText.includes('#include') || 
+                    qText.includes('def ') || 
+                    qText.includes('System.out.print') ||
+                    (qText.includes('{\n') && qText.includes('}'));
+
+                  if (hasCode) {
+                    if (qText.includes('```')) {
+                      const chunks = qText.split('```');
+                      return (
+                        <div className="space-y-3">
+                          <h2 className={`text-base md:text-xl font-bold leading-relaxed whitespace-pre-wrap ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                            {chunks[0]}
+                          </h2>
+                          <pre className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-emerald-400 font-mono text-xs md:text-sm overflow-x-auto whitespace-pre leading-relaxed shadow-inner">
+                            <code>{chunks[1]}</code>
+                          </pre>
+                          {chunks[2] && (
+                            <p className={`text-xs md:text-sm whitespace-pre-wrap ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
+                              {chunks[2]}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    } else {
+                      const allLines = qText.split('\n');
+                      const narr = [];
+                      const snippet = [];
+                      let inSnippet = false;
+
+                      for (const ln of allLines) {
+                        if (!inSnippet && (ln.includes('public class') || ln.includes('#include') || ln.includes('def ') || ln.includes('class ') || ln.includes('{'))) {
+                          inSnippet = true;
+                        }
+                        if (inSnippet) snippet.push(ln);
+                        else narr.push(ln);
+                      }
+
+                      if (snippet.length > 0) {
+                        return (
+                          <div className="space-y-3">
+                            {narr.length > 0 && (
+                              <h2 className={`text-base md:text-xl font-bold leading-relaxed whitespace-pre-wrap ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                                {narr.join('\n')}
+                              </h2>
+                            )}
+                            <pre className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-emerald-400 font-mono text-xs md:text-sm overflow-x-auto whitespace-pre leading-relaxed shadow-inner">
+                              <code>{snippet.join('\n')}</code>
+                            </pre>
+                          </div>
+                        );
+                      }
+                    }
+                  }
+
+                  // Default Multi-line Question with line-break preservation
+                  return (
+                    <h2 className={`text-base md:text-xl font-bold leading-relaxed whitespace-pre-wrap ${
+                      isLight ? 'text-slate-900' : 'text-white'
+                    }`}>
+                      {qText}
+                    </h2>
+                  );
+                })()}
+              </div>
 
               {/* Revealed Hint */}
               {hints[currentQ.id] && (
@@ -474,50 +635,151 @@ export default function QuizView() {
                 </div>
               )}
 
-              {/* Options */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[
-                  { key: 'A', text: currentQ.option_a },
-                  { key: 'B', text: currentQ.option_b },
-                  { key: 'C', text: currentQ.option_c },
-                  { key: 'D', text: currentQ.option_d }
-                ].map((opt) => {
-                  const isEliminated = eliminatedOptions[currentQ.id]?.includes(opt.key);
-                  const isSelected = answers[currentQ.id]?.includes(opt.key);
+              {/* Options Rendering: Handles True/False (2 options), Fill in the Blanks (input), and MCQ/Match */}
+              {(() => {
+                const optA = (currentQ.option_a || '').trim();
+                const optB = (currentQ.option_b || '').trim();
+                const optC = (currentQ.option_c || '').trim();
+                const optD = (currentQ.option_d || '').trim();
+
+                // True / False Question Detection
+                const isTrueFalse = 
+                  (optA.toLowerCase() === 'true' && optB.toLowerCase() === 'false') ||
+                  (optA.toLowerCase() === 'false' && optB.toLowerCase() === 'true') ||
+                  (
+                    (!optC || optC.toLowerCase() === 'option c' || optC === '-') &&
+                    (!optD || optD.toLowerCase() === 'option d' || optD === '-') &&
+                    (optA.toLowerCase() === 'true' || optB.toLowerCase() === 'false' || currentQ.question_text?.toLowerCase().includes('[true/false]') || currentQ.question_text?.toLowerCase().startsWith('true or false'))
+                  );
+
+                // Fill in the Blank Question Detection
+                const isFillBlank = 
+                  currentQ.question_text?.includes('___') ||
+                  currentQ.question_text?.toLowerCase().includes('[blank]') ||
+                  (currentQ.question_text?.toLowerCase().includes('fill in the blank') && (!optB || optB === '-' || optB.toLowerCase() === 'option b')) ||
+                  (!optB && !optC && !optD && !isTrueFalse);
+
+                // 1. FILL IN THE BLANKS: Text Box Input
+                if (isFillBlank) {
+                  return (
+                    <div className="p-5 rounded-2xl border bg-slate-50/60 dark:bg-slate-900/60 border-blue-200 dark:border-blue-900/60 space-y-3">
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Type your answer in the blank space below:
+                      </label>
+                      <input
+                        type="text"
+                        autoFocus
+                        placeholder="Type your answer here..."
+                        value={answers[currentQ.id] || ''}
+                        onChange={(e) => setAnswers({ ...answers, [currentQ.id]: e.target.value })}
+                        className="w-full p-4 rounded-xl border text-sm font-semibold bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-inner"
+                      />
+                      <p className="text-[11px] text-slate-500 italic">
+                        Tip: Answers are evaluated case-insensitively (all letters are automatically matched).
+                      </p>
+                    </div>
+                  );
+                }
+
+                // 2. TRUE OR FALSE: Display EXACTLY 2 Options
+                if (isTrueFalse) {
+                  const tfOptions = [
+                    { key: 'A', text: 'True' },
+                    { key: 'B', text: 'False' }
+                  ];
 
                   return (
-                    <button
-                      key={opt.key}
-                      disabled={isEliminated}
-                      onClick={() => handleSelectOption(opt.key)}
-                      className={`p-4 rounded-2xl border text-left text-xs transition flex items-start gap-3 cursor-pointer ${
-                        isEliminated
-                          ? isLight
-                            ? 'opacity-30 line-through bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                            : 'opacity-30 line-through bg-slate-950/40 border-slate-900 cursor-not-allowed'
-                          : isSelected
-                          ? isLight
-                            ? 'bg-blue-50 border-blue-500 text-blue-950 font-bold shadow-md shadow-blue-500/10'
-                            : 'bg-gradient-to-r from-cyan-600/40 to-indigo-600/40 border-cyan-400 text-white font-bold shadow-lg shadow-cyan-500/10'
-                          : isLight
-                          ? 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'
-                          : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <span className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
-                        isSelected 
-                          ? 'bg-blue-600 text-white' 
-                          : isLight
-                          ? 'bg-slate-200 text-slate-700'
-                          : 'bg-slate-800 text-slate-400'
-                      }`}>
-                        {opt.key}
-                      </span>
-                      <span className="flex-1 mt-0.5">{opt.text}</span>
-                    </button>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl mx-auto">
+                      {tfOptions.map((opt) => {
+                        const isEliminated = eliminatedOptions[currentQ.id]?.includes(opt.key);
+                        const isSelected = answers[currentQ.id] === opt.key;
+
+                        return (
+                          <button
+                            key={opt.key}
+                            disabled={isEliminated}
+                            onClick={() => handleSelectOption(opt.key)}
+                            className={`p-5 rounded-2xl border text-center text-sm font-bold transition flex items-center justify-center gap-3 cursor-pointer shadow-sm ${
+                              isEliminated
+                                ? 'opacity-30 line-through bg-slate-100 border-slate-200 cursor-not-allowed'
+                                : isSelected
+                                ? isLight
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-500/20 scale-[1.02]'
+                                  : 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-lg shadow-cyan-500/20 scale-[1.02]'
+                                : isLight
+                                ? 'bg-white hover:bg-slate-100 border-slate-200 text-slate-800'
+                                : 'bg-slate-950/80 border-slate-800 text-slate-200 hover:border-slate-700'
+                            }`}
+                          >
+                            <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black ${
+                              isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                            }`}>
+                              {opt.key}
+                            </span>
+                            <span className="text-base">{opt.text}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   );
-                })}
-              </div>
+                }
+
+                // 3. STANDARD MCQ / MATCH THE FOLLOWING
+                const rawOpts = [
+                  { key: 'A', text: optA },
+                  { key: 'B', text: optB },
+                  { key: 'C', text: optC },
+                  { key: 'D', text: optD }
+                ];
+                // Filter out empty or dummy placeholder options if fewer than 4 were specified
+                const validOpts = rawOpts.filter((o, idx) => {
+                  if (idx >= 2 && (!o.text || o.text === '-' || o.text.toLowerCase() === `option ${o.key.toLowerCase()}`)) {
+                    return false;
+                  }
+                  return Boolean(o.text);
+                });
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {validOpts.map((opt) => {
+                      const isEliminated = eliminatedOptions[currentQ.id]?.includes(opt.key);
+                      const isSelected = answers[currentQ.id]?.includes(opt.key);
+
+                      return (
+                        <button
+                          key={opt.key}
+                          disabled={isEliminated}
+                          onClick={() => handleSelectOption(opt.key)}
+                          className={`p-4 rounded-2xl border text-left text-xs transition flex items-start gap-3 cursor-pointer ${
+                            isEliminated
+                              ? isLight
+                                ? 'opacity-30 line-through bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                                : 'opacity-30 line-through bg-slate-950/40 border-slate-900 cursor-not-allowed'
+                              : isSelected
+                              ? isLight
+                                ? 'bg-blue-50 border-blue-500 text-blue-950 font-bold shadow-md shadow-blue-500/10'
+                                : 'bg-gradient-to-r from-cyan-600/40 to-indigo-600/40 border-cyan-400 text-white font-bold shadow-lg shadow-cyan-500/10'
+                              : isLight
+                              ? 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'
+                              : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700'
+                          }`}
+                        >
+                          <span className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                            isSelected 
+                              ? 'bg-blue-600 text-white' 
+                              : isLight
+                              ? 'bg-slate-200 text-slate-700'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}>
+                            {opt.key}
+                          </span>
+                          <span className="flex-1 mt-0.5 leading-relaxed">{opt.text}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Navigation Buttons */}
@@ -676,6 +938,20 @@ export default function QuizView() {
           </div>
         )}
       </div>
+
+      {/* IN-APP LIFELINE & ACTION TOAST NOTIFICATION (Does not steal focus) */}
+      {toastMsg && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-3 duration-200 pointer-events-none">
+          <div className={`px-5 py-3 rounded-2xl shadow-2xl border text-xs font-black flex items-center gap-2.5 backdrop-blur-md ${
+            toastMsg.type === 'error'
+              ? 'bg-red-500/90 border-red-400 text-white shadow-red-500/30'
+              : 'bg-emerald-500/95 border-emerald-300 text-white shadow-emerald-500/30'
+          }`}>
+            <Sparkles className="w-4 h-4 shrink-0" />
+            <span>{toastMsg.message}</span>
+          </div>
+        </div>
+      )}
 
       {/* GAME ZONE ANTI-CHEAT LOCKDOWN ALERT MODAL */}
       {showStrikeWarning && (

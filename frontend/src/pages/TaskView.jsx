@@ -6,7 +6,8 @@ import { useTheme, ThemeToggle } from '../context/ThemeContext';
 import { useVisionaryFeedback } from '../context/VisionaryFeedbackContext';
 import { 
   ArrowLeft, Play, Send, Terminal, Code2, 
-  FileText, CheckCircle, AlertCircle, RefreshCw
+  FileText, CheckCircle, AlertCircle, RefreshCw,
+  Maximize2, Minimize2, ShieldAlert, ShieldCheck, Zap
 } from 'lucide-react';
 import ElementRatingModal from '../components/ElementRatingModal';
 import AppreciationModal from '../components/AppreciationModal';
@@ -26,11 +27,60 @@ export default function TaskView() {
   const [submitted, setSubmitted] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [showTaskAppreciation, setShowTaskAppreciation] = useState(false);
+
+  // Game Zone Anti-Cheat Lockdown State
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [strikes, setStrikes] = useState(0);
+  const [showStrikeWarning, setShowStrikeWarning] = useState(false);
+
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchTask();
+    // Auto-enter Game Zone Fullscreen upon entering task challenge
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+    return () => {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    };
   }, [moduleId]);
+
+  // Anti-Cheat & Game Zone Arena Tab Switch Monitor
+  useEffect(() => {
+    if (submitted) return;
+
+    const handleVisibilityChange = () => {
+      if (document.hidden && !submitted) {
+        setStrikes((prev) => prev + 1);
+        setShowStrikeWarning(true);
+      }
+    };
+
+    const handleFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, [submitted]);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+  };
 
   const fetchTask = async () => {
     try {
@@ -96,6 +146,10 @@ export default function TaskView() {
         submitted_text: taskData.task_type === 'descriptive' ? descriptiveText : null,
         compiler_output: runOutput?.output || ''
       });
+      // Exit fullscreen automatically upon submission
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
       setSubmitted(true);
       triggerFeedback('progress_forward', { course: taskData?.title });
       setShowTaskAppreciation(true);
@@ -196,6 +250,32 @@ export default function TaskView() {
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {/* Game Zone Arena Badge */}
+          <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-purple-500/15 text-purple-600 dark:text-purple-300 border border-purple-500/30 text-[11px] font-black uppercase tracking-wider">
+            <span className="w-2 h-2 rounded-full bg-purple-500 animate-ping" />
+            <span>Game Zone Arena</span>
+          </div>
+
+          {/* Fullscreen Button */}
+          <button
+            onClick={toggleFullscreen}
+            className={`p-2 rounded-xl border text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
+              isLight ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100' : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800'
+            }`}
+            title="Toggle Game Zone Fullscreen Lockdown"
+          >
+            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            <span className="hidden md:inline">{isFullscreen ? 'Exit Arena' : 'Fullscreen'}</span>
+          </button>
+
+          {/* Strikes Counter (if any) */}
+          {strikes > 0 && (
+            <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-red-500/20 text-red-500 border border-red-500/40 text-xs font-black animate-pulse">
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>{strikes}/3 Strikes</span>
             </div>
           )}
 
@@ -393,6 +473,42 @@ export default function TaskView() {
         archetype={user?.pt_ls || 'Pioneers'}
         buttonText="Proceed to Next Milestone"
       />
+
+      {/* GAME ZONE ANTI-CHEAT LOCKDOWN ALERT MODAL */}
+      {showStrikeWarning && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-3xl p-6 md:p-8 border border-red-500/40 bg-slate-950 text-white shadow-2xl text-center space-y-4 relative">
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center">
+              <ShieldAlert className="w-8 h-8 text-red-400 animate-bounce" />
+            </div>
+
+            <h3 className="text-xl font-black text-red-400 tracking-tight">
+              Game Zone Lockdown Alert!
+            </h3>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Focus loss or tab switching detected. While the coding task challenge is active, your screen is restricted to prevent malpractice.
+            </p>
+
+            <div className="p-3 rounded-xl bg-red-950/60 border border-red-800/80 text-xs font-bold text-red-300 flex items-center justify-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-red-400" />
+              <span>Integrity Warning Recorded: {strikes} of 3</span>
+            </div>
+
+            <button
+              onClick={() => {
+                setShowStrikeWarning(false);
+                if (!document.fullscreenElement) {
+                  document.documentElement.requestFullscreen().catch(() => {});
+                }
+              }}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs cursor-pointer shadow-lg shadow-red-500/25 transition"
+            >
+              Return to Task Arena
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

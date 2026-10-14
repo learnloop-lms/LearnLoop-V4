@@ -29,7 +29,7 @@ def download_quiz_template(current_user = Depends(auth.get_current_user)):
     headers = [
         "question_text", "option_a", "option_b", "option_c", "option_d",
         "correct_option", "cognitive_level", "blooms_level", "target_pt_ls",
-        "hint_text", "explanation"
+        "question_type", "hint_text", "explanation"
     ]
     ws.append(headers)
 
@@ -44,28 +44,45 @@ def download_quiz_template(current_user = Depends(auth.get_current_user)):
         cell.fill = header_fill
         cell.alignment = center_align
 
-    # Add sample template rows
+    # Add sample template rows covering all question formats
     sample_rows = [
         [
             "What is the average time complexity of searching an element in a balanced Binary Search Tree?",
             "O(n)", "O(log n)", "O(n log n)", "O(1)",
-            "B", "medium", "Understand", "universal",
+            "B", "medium", "Understand", "Visionaries", "mcq",
             "Think of divide and conquer halving search space at each step",
             "A balanced BST halves the search space at each tree level leading to O(log n)."
         ],
         [
-            "Which C language keyword is used to declare a variable that cannot be modified?",
-            "const", "static", "volatile", "register",
-            "A", "easy", "Remember", "universal",
-            "Short for constant",
-            "The const keyword specifies that a variable value is read-only."
+            "In Python, tuples are immutable data structures that cannot be modified after creation.",
+            "True", "False", "", "",
+            "A", "easy", "Remember", "universal", "true_false",
+            "Tuples cannot be altered once defined",
+            "Tuples are immutable in Python, whereas lists are mutable."
         ],
         [
-            "Which algorithm design technique does Dijkstra's shortest path algorithm employ?",
-            "Divide and Conquer", "Dynamic Programming", "Greedy Method", "Backtracking",
-            "C", "hard", "Apply", "universal",
-            "Selects the currently known minimum vertex first",
-            "Dijkstra algorithm greedily picks the minimum distance unvisited vertex at every stage."
+            "The Java virtual machine converts compiled Java bytecode into _______ code during runtime execution.",
+            "machine", "", "", "",
+            "A", "medium", "Understand", "universal", "fill_blank",
+            "Native hardware executable instructions",
+            "The JIT compiler within JVM translates bytecode into native machine code."
+        ],
+        [
+            "Match the programming language with its primary paradigm:\nList - I\tList - II\n(a) Java\t(i) Object Oriented\n(b) Python\t(ii) Multi-paradigm Interpreted\n(c) Prolog\t(iii) Logic Programming\n(d) C\t(iv) Procedural",
+            "(a)-(i), (b)-(ii), (c)-(iii), (d)-(iv)",
+            "(a)-(ii), (b)-(i), (c)-(iv), (d)-(iii)",
+            "(a)-(iv), (b)-(iii), (c)-(i), (d)-(ii)",
+            "(a)-(i), (b)-(iii), (c)-(ii), (d)-(iv)",
+            "A", "hard", "Analyze", "universal", "match",
+            "Consider Prolog's logic foundation and Java's class structure",
+            "Java is Object Oriented, Python is Multi-paradigm, Prolog is Logic, and C is Procedural."
+        ],
+        [
+            "What will be the output of the following Java snippet?\n\npublic class Test {\n    public static void main(String[] args) {\n        int a = 5;\n        System.out.println(a++ + ++a);\n    }\n}",
+            "10", "11", "12", "13",
+            "C", "hard", "Apply", "universal", "mcq",
+            "x++ uses the current value then increments, while ++x increments first",
+            "a++ evaluates to 5 and sets a=6. ++a increments a to 7 and evaluates to 7. Result: 5 + 7 = 12."
         ]
     ]
 
@@ -75,8 +92,8 @@ def download_quiz_template(current_user = Depends(auth.get_current_user)):
     # Adjust column widths automatically
     col_widths = {
         "A": 50, "B": 24, "C": 24, "D": 24, "E": 24,
-        "F": 16, "G": 18, "H": 18, "I": 18,
-        "J": 35, "K": 40
+        "F": 16, "G": 18, "H": 18, "I": 18, "J": 18,
+        "K": 35, "L": 40
     }
     for col_letter, width in col_widths.items():
         ws.column_dimensions[col_letter].width = width
@@ -147,11 +164,12 @@ async def bulk_upload_quiz_questions(
             cog_idx = get_col("cognitive_level", ["difficulty", "complexity", "level"])
             bloom_idx = get_col("blooms_level", ["bloom", "blooms", "bloom_level"])
             pt_idx = get_col("target_pt_ls", ["pt_ls", "archetype", "target"])
+            type_idx = get_col("question_type", ["type", "q_type"])
             hint_idx = get_col("hint_text", ["hint"])
             exp_idx = get_col("explanation", ["exp", "solution"])
 
-            if q_idx == -1 or a_idx == -1 or b_idx == -1 or c_idx == -1 or d_idx == -1 or ans_idx == -1:
-                raise HTTPException(status_code=400, detail="Missing required columns: question_text, option_a, option_b, option_c, option_d, correct_option.")
+            if q_idx == -1 or ans_idx == -1:
+                raise HTTPException(status_code=400, detail="Missing required columns: question_text and correct_option.")
 
             for r_idx, r in enumerate(rows[1:], start=2):
                 if not r or not any(r):
@@ -160,13 +178,21 @@ async def bulk_upload_quiz_questions(
                 if not q_text:
                     continue
                 
+                q_type = str(r[type_idx]).strip().lower() if type_idx != -1 and type_idx < len(r) and r[type_idx] else ""
+                opt_a = str(r[a_idx]).strip() if a_idx != -1 and a_idx < len(r) and r[a_idx] is not None else ""
+                opt_b = str(r[b_idx]).strip() if b_idx != -1 and b_idx < len(r) and r[b_idx] is not None else ""
+                opt_c = str(r[c_idx]).strip() if c_idx != -1 and c_idx < len(r) and r[c_idx] is not None else ""
+                opt_d = str(r[d_idx]).strip() if d_idx != -1 and d_idx < len(r) and r[d_idx] is not None else ""
+                raw_ans = str(r[ans_idx]).strip() if ans_idx < len(r) and r[ans_idx] is not None else "A"
+
                 rows_data.append({
                     "question_text": q_text,
-                    "option_a": str(r[a_idx]).strip() if a_idx < len(r) and r[a_idx] is not None else "",
-                    "option_b": str(r[b_idx]).strip() if b_idx < len(r) and r[b_idx] is not None else "",
-                    "option_c": str(r[c_idx]).strip() if c_idx < len(r) and r[c_idx] is not None else "",
-                    "option_d": str(r[d_idx]).strip() if d_idx < len(r) and r[d_idx] is not None else "",
-                    "correct_option": str(r[ans_idx]).strip().upper() if ans_idx < len(r) and r[ans_idx] is not None else "A",
+                    "question_type": q_type,
+                    "option_a": opt_a,
+                    "option_b": opt_b,
+                    "option_c": opt_c,
+                    "option_d": opt_d,
+                    "correct_option": raw_ans,
                     "cognitive_level": str(r[cog_idx]).strip().lower() if cog_idx != -1 and cog_idx < len(r) and r[cog_idx] else "medium",
                     "blooms_level": str(r[bloom_idx]).strip() if bloom_idx != -1 and bloom_idx < len(r) and r[bloom_idx] else "Understand",
                     "target_pt_ls": str(r[pt_idx]).strip() if pt_idx != -1 and pt_idx < len(r) and r[pt_idx] else "universal",
@@ -189,11 +215,12 @@ async def bulk_upload_quiz_questions(
                     continue
                 rows_data.append({
                     "question_text": q_text.strip(),
+                    "question_type": (clean_row.get("question_type") or clean_row.get("type") or "").strip().lower(),
                     "option_a": (clean_row.get("option_a") or clean_row.get("a") or "").strip(),
                     "option_b": (clean_row.get("option_b") or clean_row.get("b") or "").strip(),
                     "option_c": (clean_row.get("option_c") or clean_row.get("c") or "").strip(),
                     "option_d": (clean_row.get("option_d") or clean_row.get("d") or "").strip(),
-                    "correct_option": (clean_row.get("correct_option") or clean_row.get("correct") or "A").strip().upper(),
+                    "correct_option": (clean_row.get("correct_option") or clean_row.get("correct") or "A").strip(),
                     "cognitive_level": (clean_row.get("cognitive_level") or clean_row.get("difficulty") or "medium").strip().lower(),
                     "blooms_level": (clean_row.get("blooms_level") or clean_row.get("bloom") or "Understand").strip(),
                     "target_pt_ls": (clean_row.get("target_pt_ls") or clean_row.get("pt_ls") or "universal").strip(),
@@ -210,26 +237,80 @@ async def bulk_upload_quiz_questions(
 
     created = []
     for item in rows_data:
-        # Validate correct option format (must be A, B, C, or D)
-        corr = item["correct_option"][:1].upper()
-        if corr not in ["A", "B", "C", "D"]:
+        q_text = item["question_text"]
+        q_type = item.get("question_type", "").lower()
+        opt_a = item["option_a"]
+        opt_b = item["option_b"]
+        opt_c = item["option_c"]
+        opt_d = item["option_d"]
+        raw_corr = item["correct_option"].strip()
+
+        # Check if question is True/False
+        is_tf = (
+            q_type in ["true_false", "tf", "boolean"] or
+            (opt_a.lower() == "true" and opt_b.lower() == "false") or
+            (opt_a.lower() == "false" and opt_b.lower() == "true") or
+            "[true/false]" in q_text.lower() or
+            q_text.lower().startswith("true or false")
+        )
+
+        # Check if question is Fill in the Blank
+        is_fib = (
+            q_type in ["fill_blank", "fill_in_the_blank", "fib", "blank"] or
+            "___" in q_text or
+            "[blank]" in q_text.lower() or
+            ("fill in the blank" in q_text.lower() and not opt_b)
+        )
+
+        if is_tf:
+            if not opt_a:
+                opt_a = "True"
+            if not opt_b:
+                opt_b = "False"
+            opt_c = ""
+            opt_d = ""
+            if raw_corr.upper() in ["A", "TRUE", "T", "1"]:
+                corr = "A"
+            else:
+                corr = "B"
+        elif is_fib:
+            # In Fill in the blank: answer string is in option_a
+            if not opt_a and raw_corr and raw_corr.upper() not in ["A", "B", "C", "D"]:
+                opt_a = raw_corr
+            opt_b = ""
+            opt_c = ""
+            opt_d = ""
             corr = "A"
+        else:
+            # Standard MCQ / Match
+            corr = raw_corr[:1].upper() if raw_corr else "A"
+            if corr not in ["A", "B", "C", "D"]:
+                corr = "A"
+            if not opt_a:
+                opt_a = "Option A"
+            if not opt_b:
+                opt_b = "Option B"
+            # Do NOT inject dummy "Option C" or "Option D" if they were not provided
 
         # Validate cognitive level
         cog = item["cognitive_level"].lower()
-        if cog not in ["easy", "medium", "hard"]:
-            cog = "medium"
+        if cog in ["easy", "slow", "basic"]:
+            cog = "slow"
+        elif cog in ["hard", "fast", "advanced"]:
+            cog = "fast"
+        else:
+            cog = "average"
 
         q = models.QuizQuestion(
             module_id=module_id,
             cognitive_level=cog,
-            target_pt_ls=item["target_pt_ls"],
-            blooms_level=item["blooms_level"],
-            question_text=item["question_text"],
-            option_a=item["option_a"] or "Option A",
-            option_b=item["option_b"] or "Option B",
-            option_c=item["option_c"] or "Option C",
-            option_d=item["option_d"] or "Option D",
+            target_pt_ls=item["target_pt_ls"] or "Universal",
+            blooms_level=item["blooms_level"] or "Understand",
+            question_text=q_text,
+            option_a=opt_a,
+            option_b=opt_b,
+            option_c=opt_c,
+            option_d=opt_d,
             correct_option=corr,
             hint_text=item["hint_text"],
             explanation=item["explanation"]
@@ -295,9 +376,9 @@ def get_adaptive_quiz(
         raise HTTPException(status_code=404, detail="Module not found.")
 
     student_cog = (current_user.cognitive_level or "average").lower()
-    student_ptls = current_user.pt_ls or "Universal"
+    student_ptls = (current_user.pt_ls or "Universal").strip()
 
-    # Algorithm 5: Dynamic breakdown of Q_e (Easy), Q_m (Medium), Q_h (Hard)
+    # Dynamic breakdown of Q_e (Easy), Q_m (Medium), Q_h (Hard)
     if module.module_no == 1 and student_cog == "average":
         q_easy_req, q_med_req, q_hard_req = 5, 3, 2
     elif student_cog == "slow":
@@ -307,21 +388,61 @@ def get_adaptive_quiz(
     else: # fast
         q_easy_req, q_med_req, q_hard_req = 2, 4, 4
 
-    # Fetch pool for this module
+    # Player-Type matching helpers
+    def is_pt_specific(q_pt: str, s_pt: str) -> bool:
+        if not q_pt or not q_pt.strip():
+            return False
+        qp = q_pt.strip().lower()
+        sp = s_pt.strip().lower()
+        if qp in ["universal", "all", "general", "any", "common"]:
+            return False
+        return qp.startswith(sp[:5]) or sp.startswith(qp[:5])
+
+    def pt_matches(q_pt: str, s_pt: str) -> bool:
+        if not q_pt or not q_pt.strip():
+            return True
+        qp = q_pt.strip().lower()
+        sp = s_pt.strip().lower()
+        if qp in ["universal", "all", "general", "any", "common"]:
+            return True
+        return qp.startswith(sp[:5]) or sp.startswith(qp[:5])
+
+    # Fetch all questions for this module
     all_questions = db.query(models.QuizQuestion).filter(models.QuizQuestion.module_id == module_id).all()
-    
-    easy_pool = [q for q in all_questions if q.cognitive_level == "slow"]
-    med_pool = [q for q in all_questions if q.cognitive_level == "average"]
-    hard_pool = [q for q in all_questions if q.cognitive_level == "fast"]
+
+    # Separate archetype-tailored vs universal questions
+    specific_pool = [q for q in all_questions if is_pt_specific(q.target_pt_ls, student_ptls)]
+    universal_pool = [q for q in all_questions if pt_matches(q.target_pt_ls, student_ptls) and not is_pt_specific(q.target_pt_ls, student_ptls)]
+
+    if len(specific_pool) >= 10:
+        eligible_pool = specific_pool
+    elif len(specific_pool) + len(universal_pool) >= 5:
+        eligible_pool = specific_pool + universal_pool
+    else:
+        eligible_pool = all_questions
+
+    # Cognitive pool grouping
+    def get_cog_tier(cog: str) -> str:
+        c = (cog or "").strip().lower()
+        if c in ["slow", "easy", "basic"]:
+            return "slow"
+        elif c in ["fast", "hard", "advanced"]:
+            return "fast"
+        return "average"
+
+    easy_pool = [q for q in eligible_pool if get_cog_tier(q.cognitive_level) == "slow"]
+    med_pool = [q for q in eligible_pool if get_cog_tier(q.cognitive_level) == "average"]
+    hard_pool = [q for q in eligible_pool if get_cog_tier(q.cognitive_level) == "fast"]
 
     selected = []
     selected += random.sample(easy_pool, min(len(easy_pool), q_easy_req))
     selected += random.sample(med_pool, min(len(med_pool), q_med_req))
     selected += random.sample(hard_pool, min(len(hard_pool), q_hard_req))
 
-    # If pool is smaller than required, fill from remaining
-    remaining = [q for q in all_questions if q not in selected]
-    while len(selected) < min(10, len(all_questions)) and remaining:
+    # Fill up to 10 from remaining eligible questions
+    remaining = [q for q in eligible_pool if q not in selected]
+    random.shuffle(remaining)
+    while len(selected) < min(10, len(eligible_pool)) and remaining:
         selected.append(remaining.pop(0))
 
     random.shuffle(selected)
@@ -330,12 +451,14 @@ def get_adaptive_quiz(
         "module_id": module_id,
         "concept_name": module.concept_name,
         "student_cognitive_level": student_cog,
+        "student_player_type": student_ptls,
         "total_questions": len(selected),
         "questions": [
             {
                 "id": q.id,
                 "cognitive_level": q.cognitive_level,
                 "blooms_level": q.blooms_level,
+                "target_pt_ls": q.target_pt_ls,
                 "question_text": q.question_text,
                 "option_a": q.option_a,
                 "option_b": q.option_b,
@@ -491,6 +614,7 @@ def submit_quiz(
     q_counts = {"slow": 0, "average": 0, "fast": 0}
     explanation_map = {}
     is_visionary = current_user.pt_ls == "Visionaries"
+    detailed_responses = []
 
     for ans in req.answers:
         q = db.query(models.QuizQuestion).filter(models.QuizQuestion.id == ans.question_id).first()
@@ -498,12 +622,65 @@ def submit_quiz(
             continue
 
         q_cat = q.cognitive_level.lower()
+        if q_cat in ["easy", "basic"]:
+            q_cat = "slow"
+        elif q_cat in ["hard", "advanced"]:
+            q_cat = "fast"
+        else:
+            q_cat = "average"
+
         q_counts[q_cat] = q_counts.get(q_cat, 0) + 1
 
-        correct = q.correct_option.strip().upper()
-        student_ans = ans.chosen_option.strip().upper()
+        opt_a_clean = (q.option_a or "").strip()
+        opt_b_clean = (q.option_b or "").strip()
+        opt_c_clean = (q.option_c or "").strip()
+        opt_d_clean = (q.option_d or "").strip()
 
-        if student_ans == correct:
+        # Identify True/False
+        is_tf = (
+            (opt_a_clean.lower() == "true" and opt_b_clean.lower() == "false") or
+            (opt_a_clean.lower() == "false" and opt_b_clean.lower() == "true") or
+            "[true/false]" in q.question_text.lower() or
+            q.question_text.lower().startswith("true or false")
+        )
+
+        # Identify Fill in the Blank
+        is_fib = (
+            "___" in q.question_text or
+            "[blank]" in q.question_text.lower() or
+            ("fill in the blank" in q.question_text.lower() and not opt_b_clean) or
+            (not opt_b_clean and not opt_c_clean and not opt_d_clean)
+        )
+
+        student_ans_raw = (ans.chosen_option or "").strip()
+        is_correct = False
+        correct_answer_text = ""
+
+        if is_fib:
+            # Case-insensitive comparison with all lowercase
+            expected_answer = (opt_a_clean or q.correct_option or "").strip().lower()
+            student_clean = student_ans_raw.strip().lower()
+            is_correct = bool(student_clean and expected_answer and (student_clean == expected_answer))
+            correct_answer_text = opt_a_clean or q.correct_option
+        elif is_tf:
+            corr_letter = (q.correct_option or "A").strip().upper()
+            if opt_a_clean.lower() == "true":
+                expected_tf = "TRUE" if corr_letter in ["A", "TRUE", "T"] else "FALSE"
+            else:
+                expected_tf = "FALSE" if corr_letter in ["A", "FALSE"] else "TRUE"
+
+            student_tf = "TRUE" if student_ans_raw.upper() in ["A", "TRUE", "T"] else "FALSE"
+            is_correct = (student_tf == expected_tf)
+            correct_answer_text = expected_tf.capitalize()
+        else:
+            # Standard MCQ / Match
+            corr_letter = (q.correct_option or "A").strip().upper()[:1]
+            student_letter = student_ans_raw.strip().upper()[:1]
+            is_correct = (student_letter == corr_letter)
+            opt_map = {"A": opt_a_clean, "B": opt_b_clean, "C": opt_c_clean, "D": opt_d_clean}
+            correct_answer_text = f"{corr_letter}: {opt_map.get(corr_letter, opt_a_clean)}"
+
+        if is_correct:
             score += 1
         else:
             mistakes_by_cat[q_cat] = mistakes_by_cat.get(q_cat, 0) + 1
@@ -511,18 +688,34 @@ def submit_quiz(
         if is_visionary and q.explanation:
             explanation_map[q.id] = q.explanation
 
+        detailed_responses.append({
+            "question_id": q.id,
+            "question_text": q.question_text,
+            "option_a": opt_a_clean,
+            "option_b": opt_b_clean,
+            "option_c": opt_c_clean,
+            "option_d": opt_d_clean,
+            "chosen_option": ans.chosen_option,
+            "student_answer": student_ans_raw,
+            "correct_option": q.correct_option,
+            "correct_answer": correct_answer_text,
+            "is_correct": is_correct,
+            "explanation": q.explanation or q.hint_text,
+            "is_fill_blank": is_fib,
+            "is_tf": is_tf,
+            "lifelines_used": getattr(ans, "lifelines_used", []) or []
+        })
+
     total_q = len(req.answers) if req.answers else 1
     accuracy = score / total_q
 
     # Determine HIT (mistake category with highest incorrect count)
-    # 0 = none/slow, 1 = basic, 2 = intermediate, 3 = advanced
     hit_cat = max(mistakes_by_cat, key=mistakes_by_cat.get) if any(mistakes_by_cat.values()) else "none"
     hit_encoding_map = {"slow": 1, "average": 2, "fast": 3, "none": 0}
     hit_encoded = hit_encoding_map.get(hit_cat, 0)
 
     # -------------------------------------------------------------------------
     # ANN Model 2: Evaluate Quiz Cognitive Level (STRICTLY INTERNAL coq)
-    # NEVER sent to leaderboard!
     # -------------------------------------------------------------------------
     coq_predicted = ai_engine.predict_quiz_cognitive(
         msq=float(score),
@@ -531,7 +724,7 @@ def submit_quiz(
         hit_encoded=hit_encoded
     )
 
-    # Record submission
+    # Record submission with full detailed breakdown
     submission = models.QuizSubmission(
         student_id=current_user.id,
         module_id=req.module_id,
@@ -542,7 +735,7 @@ def submit_quiz(
         q_med_count=q_counts.get("average", 0),
         q_hard_count=q_counts.get("fast", 0),
         coq_predicted=coq_predicted,
-        responses_detail=[a.dict() for a in req.answers]
+        responses_detail=detailed_responses
     )
     db.add(submission)
 
@@ -576,3 +769,40 @@ def submit_quiz(
         next_step=next_step,
         explanation_map=explanation_map if is_visionary else None
     )
+
+@router.get("/module/{module_id}/my-submission")
+def get_my_quiz_submission(
+    module_id: str,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns the student's completed quiz submission for this module,
+    including each question, chosen answer, correct answer, and correctness.
+    """
+    if getattr(current_user, "current_role", "") != "student":
+        raise HTTPException(status_code=403, detail="Students only.")
+
+    sub = db.query(models.QuizSubmission).filter(
+        models.QuizSubmission.module_id == module_id,
+        models.QuizSubmission.student_id == current_user.id
+    ).order_by(models.QuizSubmission.submitted_at.desc()).first()
+
+    if not sub:
+        raise HTTPException(status_code=404, detail="No quiz submission found for this module.")
+
+    module = db.query(models.Module).filter(models.Module.id == module_id).first()
+    course = module.course if module else None
+    passing_threshold = course.passing_threshold_p if course else 5.0
+
+    return {
+        "id": sub.id,
+        "module_id": sub.module_id,
+        "concept_name": module.concept_name if module else "Quiz",
+        "msq_score": sub.msq_score,
+        "total_questions": len(sub.responses_detail) if sub.responses_detail else 10,
+        "passing_threshold": passing_threshold,
+        "passed": sub.msq_score >= passing_threshold,
+        "submitted_at": sub.submitted_at,
+        "responses_detail": sub.responses_detail or []
+    }

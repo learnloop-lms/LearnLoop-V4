@@ -74,6 +74,7 @@ def get_pending_revaluations(
         module_name = ""
         prog_lang = ""
 
+        quiz_breakdown = []
         if r.assessment_type == "task":
             sub = db.query(models.TaskSubmission).filter(models.TaskSubmission.id == r.assessment_id).first()
             if sub:
@@ -89,6 +90,18 @@ def get_pending_revaluations(
                         module_name = sub.task.module.concept_name or ""
                         if sub.task.module.course:
                             course_title = sub.task.module.course.title or ""
+        elif r.assessment_type == "quiz":
+            sub = db.query(models.QuizSubmission).filter(models.QuizSubmission.id == r.assessment_id).first()
+            if sub:
+                mod = db.query(models.Module).filter(models.Module.id == sub.module_id).first()
+                if mod:
+                    module_name = mod.concept_name or ""
+                    if mod.course:
+                        course_title = mod.course.title or ""
+                task_title = f"{module_name} Adaptive Quiz"
+                question_text = f"Quiz Challenge: Original Score {sub.msq_score} marks"
+                submitted_text = f"Student submitted quiz responses ({len(sub.responses_detail or [])} questions answered)."
+                quiz_breakdown = sub.responses_detail or []
 
         res.append({
             "id": r.id,
@@ -109,6 +122,7 @@ def get_pending_revaluations(
             "compiler_output": compiler_output,
             "teacher_feedback": teacher_feedback,
             "programming_language": prog_lang,
+            "quiz_breakdown": quiz_breakdown,
             "created_at": r.created_at
         })
     return res
@@ -139,6 +153,13 @@ def resolve_revaluation(
             sub = db.query(models.QuizSubmission).filter(models.QuizSubmission.id == rev.assessment_id).first()
             if sub:
                 sub.msq_score = float(req.revised_score)
+                # Also update learner module state if exists
+                st = db.query(models.LearnerModuleState).filter(
+                    models.LearnerModuleState.student_id == rev.student_id,
+                    models.LearnerModuleState.module_id == sub.module_id
+                ).first()
+                if st:
+                    st.msq = float(req.revised_score)
         elif rev.assessment_type == "task":
             sub = db.query(models.TaskSubmission).filter(models.TaskSubmission.id == rev.assessment_id).first()
             if sub:
@@ -147,6 +168,12 @@ def resolve_revaluation(
                     sub.teacher_feedback = req.teacher_notes
                 sub.evaluated_by = current_user.id
                 sub.evaluated_at = datetime.utcnow()
+                st = db.query(models.LearnerModuleState).filter(
+                    models.LearnerModuleState.student_id == rev.student_id,
+                    models.LearnerModuleState.module_id == sub.task.module_id if sub.task else ""
+                ).first()
+                if st:
+                    st.mst = float(req.revised_score)
 
     db.commit()
     return {"message": f"Revaluation request {rev.status}."}
