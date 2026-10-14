@@ -410,15 +410,9 @@ def get_adaptive_quiz(
     # Fetch all questions for this module
     all_questions = db.query(models.QuizQuestion).filter(models.QuizQuestion.module_id == module_id).all()
 
-    # Separate archetype-tailored vs universal questions
-    specific_pool = [q for q in all_questions if is_pt_specific(q.target_pt_ls, student_ptls)]
-    universal_pool = [q for q in all_questions if pt_matches(q.target_pt_ls, student_ptls) and not is_pt_specific(q.target_pt_ls, student_ptls)]
-
-    if len(specific_pool) >= 10:
-        eligible_pool = specific_pool
-    elif len(specific_pool) + len(universal_pool) >= 5:
-        eligible_pool = specific_pool + universal_pool
-    else:
+    # Eligible questions = Archetype-matched questions + Universal questions (always shared with all students)
+    eligible_pool = [q for q in all_questions if pt_matches(q.target_pt_ls, student_ptls)]
+    if not eligible_pool:
         eligible_pool = all_questions
 
     # Cognitive pool grouping

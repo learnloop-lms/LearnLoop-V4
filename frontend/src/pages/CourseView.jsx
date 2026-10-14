@@ -994,6 +994,34 @@ export default function CourseView() {
                             </p>
                           )}
 
+                          {/* Assigned Task Question / Problem Statement */}
+                          {progress.task_problem_statement && (
+                            <div className="mt-3 p-3.5 rounded-2xl bg-white/85 dark:bg-slate-900/85 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 shadow-xs">
+                              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center gap-1.5">
+                                <BookOpen className="w-3.5 h-3.5 text-blue-500" />
+                                {progress.task_title ? `Assigned Question: ${progress.task_title}` : 'Assigned Task Challenge (Question)'}
+                              </h4>
+                              <p className="text-xs leading-relaxed whitespace-pre-wrap font-mono">
+                                {progress.task_problem_statement}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Student's Submitted Solution Preview */}
+                          {(progress.submitted_code || progress.submitted_text) && (
+                            <div className="mt-3 p-3.5 rounded-2xl bg-slate-900 text-slate-100 border border-slate-800 shadow-inner">
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                                  <Code2 className="w-3 h-3 text-emerald-400" />
+                                  Your Submitted Solution {progress.programming_language ? `(${progress.programming_language})` : ''}
+                                </span>
+                              </div>
+                              <pre className="text-xs font-mono overflow-x-auto max-h-48 leading-relaxed text-emerald-300">
+                                {progress.submitted_code || progress.submitted_text}
+                              </pre>
+                            </div>
+                          )}
+
                           {/* Revaluation Status Banner */}
                           {progress.revaluation_status === 'pending' && (
                             <div className="mt-3 p-2.5 rounded-xl bg-purple-100/90 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[11px] text-purple-900 dark:text-purple-300 flex items-center gap-2">
@@ -1426,14 +1454,26 @@ export default function CourseView() {
               Appeal your assignment evaluation to your instructor for a second review.
             </p>
 
-            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs mb-4 flex items-center justify-between">
-              <div>
-                <span className="font-bold text-slate-700 dark:text-slate-300 block">{activeModule?.concept_name}</span>
-                <span className="text-[11px] text-slate-400">Current Awarded Score:</span>
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <span className="font-bold text-slate-700 dark:text-slate-300 block">{activeModule?.concept_name}</span>
+                  <span className="text-[11px] text-slate-400">Current Awarded Score:</span>
+                </div>
+                <span className="text-sm font-black text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-3 py-1 rounded-xl border border-purple-200 dark:border-purple-800">
+                  {progress?.task_score} marks
+                </span>
               </div>
-              <span className="text-sm font-black text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-3 py-1 rounded-xl border border-purple-200 dark:border-purple-800">
-                {progress?.task_score} marks
-              </span>
+              {progress?.task_problem_statement && (
+                <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+                    Assigned Question: {progress.task_title || 'Challenge Prompt'}
+                  </span>
+                  <p className="text-[11px] font-mono leading-relaxed line-clamp-3 text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
+                    {progress.task_problem_statement}
+                  </p>
+                </div>
+              )}
             </div>
 
             <form onSubmit={handleRequestRevaluation} className="space-y-4">

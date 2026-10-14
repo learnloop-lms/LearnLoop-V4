@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas, auth
+from app.services.ai_engine import ai_engine
+from app.services.gamification import calculate_reward_coins, check_streak_and_promotion
 
 router = APIRouter(prefix="/revaluations", tags=["Assessment Revaluations"])
 
@@ -147,19 +149,28 @@ def resolve_revaluation(
 
     if req.status.lower() == "accepted" and req.revised_score is not None:
         rev.revised_score = float(req.revised_score)
+        student = db.query(models.Student).filter(models.Student.id == rev.student_id).first()
+
+        module = None
+        msq = 0.0
+        mst = 0.0
 
         # Update the actual submission record
         if rev.assessment_type == "quiz":
             sub = db.query(models.QuizSubmission).filter(models.QuizSubmission.id == rev.assessment_id).first()
             if sub:
                 sub.msq_score = float(req.revised_score)
-                # Also update learner module state if exists
-                st = db.query(models.LearnerModuleState).filter(
-                    models.LearnerModuleState.student_id == rev.student_id,
-                    models.LearnerModuleState.module_id == sub.module_id
-                ).first()
-                if st:
-                    st.msq = float(req.revised_score)
+                module = db.query(models.Module).filter(models.Module.id == sub.module_id).first()
+                msq = float(req.revised_score)
+                # Check task submission if exists for this module
+                if module:
+                    task_ids = [t.id for t in module.task_challenges]
+                    last_task_sub = db.query(models.TaskSubmission).filter(
+                        models.TaskSubmission.student_id == rev.student_id,
+                        models.TaskSubmission.task_id.in_(task_ids)
+                    ).order_by(models.TaskSubmission.submitted_at.desc()).first() if task_ids else None
+                    mst = float(last_task_sub.mst_score) if (last_task_sub and last_task_sub.mst_score is not None) else 0.0
+
         elif rev.assessment_type == "task":
             sub = db.query(models.TaskSubmission).filter(models.TaskSubmission.id == rev.assessment_id).first()
             if sub:
@@ -168,12 +179,85 @@ def resolve_revaluation(
                     sub.teacher_feedback = req.teacher_notes
                 sub.evaluated_by = current_user.id
                 sub.evaluated_at = datetime.utcnow()
-                st = db.query(models.LearnerModuleState).filter(
-                    models.LearnerModuleState.student_id == rev.student_id,
-                    models.LearnerModuleState.module_id == sub.task.module_id if sub.task else ""
-                ).first()
-                if st:
-                    st.mst = float(req.revised_score)
+                if sub.task:
+                    module = sub.task.module
+                mst = float(req.revised_score)
+                if module:
+                    last_quiz = db.query(models.QuizSubmission).filter(
+                        models.QuizSubmission.student_id == rev.student_id,
+                        models.QuizSubmission.module_id == module.id
+                    ).order_by(models.QuizSubmission.submitted_at.desc()).first()
+                    msq = float(last_quiz.msq_score) if last_quiz else 0.0
+
+        # Recalculate Model 4, Leaderboard Score (tp_total_performance), and Coins
+        if module and student:
+            course = module.course
+            w1 = course.w1_quiz_weight if course else 0.5
+            w2 = course.w2_task_weight if course else 0.5
+            scaled_msq = msq * 10.0 if msq <= 10.0 else msq
+            tp = (w1 * scaled_msq) + (w2 * mst)
+
+            # Re-evaluate ANN Model 4: Cognitive Update
+            cmc = module.complexity_cmc or 1
+            raw_label, leaderboard_level = ai_engine.predict_cognitive_update(cmc, tp)
+
+            cog_backend_map = {"Fast Learner": "fast", "Medium Learner": "average", "Slow Learner": "slow"}
+            new_cog = cog_backend_map.get(raw_label, "average")
+
+            final_cog, new_streak = check_streak_and_promotion(
+                current_level=student.cognitive_level or "average",
+                new_level=new_cog,
+                current_streak=student.level_streak_count or 0
+            )
+            student.cognitive_level = final_cog
+            student.level_streak_count = new_streak
+
+            # Recalculate reward coins for the tier
+            new_reward_coins = calculate_reward_coins(leaderboard_level)
+
+            # Find or update LearnerModuleState
+            st = db.query(models.LearnerModuleState).filter(
+                models.LearnerModuleState.student_id == student.id,
+                models.LearnerModuleState.module_id == module.id
+            ).first()
+
+            old_reward = 0
+            if st:
+                old_reward = st.reward_coins_earned or 0
+                st.msq = msq
+                st.mst = mst
+                st.tp_total_performance = tp
+                st.model4_output = raw_label
+                st.leaderboard_level = leaderboard_level
+                st.level_streak_count = new_streak
+                st.reward_coins_earned = new_reward_coins
+            else:
+                st = models.LearnerModuleState(
+                    student_id=student.id,
+                    module_id=module.id,
+                    pmc=1,
+                    cmc=cmc,
+                    msq=msq,
+                    mst=mst,
+                    tp_total_performance=tp,
+                    model4_output=raw_label,
+                    leaderboard_level=leaderboard_level,
+                    level_streak_count=new_streak,
+                    reward_coins_earned=new_reward_coins
+                )
+                db.add(st)
+
+            # Adjust student total coins:
+            # 1. Tier upgrade bonus difference:
+            tier_diff = new_reward_coins - old_reward
+            if tier_diff > 0:
+                student.total_coins += tier_diff
+
+            # 2. Mark improvement coin reward (10 coins per point gained in revaluation):
+            score_diff = rev.revised_score - (rev.original_score or 0.0)
+            if score_diff > 0:
+                mark_coins = int(score_diff * 10)
+                student.total_coins += mark_coins
 
     db.commit()
     return {"message": f"Revaluation request {rev.status}."}
