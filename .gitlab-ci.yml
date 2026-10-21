@@ -23,7 +23,7 @@ deploy:
     - echo "=== Pulling external service images (e.g. PostgreSQL) ==="
     - docker compose pull --ignore-buildable || true
     - echo "=== Building new container versions ==="
-    - docker compose build --pull
+    - docker compose build
     - echo "=== Starting services with latest container versions ==="
     - docker compose up -d --force-recreate --remove-orphans
     - docker image prune -f
