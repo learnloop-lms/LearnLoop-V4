@@ -362,6 +362,65 @@ def get_all_module_quiz_questions(
         raise HTTPException(status_code=403, detail="Teachers only.")
     return db.query(models.QuizQuestion).filter(models.QuizQuestion.module_id == module_id).all()
 
+@router.put("/questions/{question_id}")
+def update_quiz_question(
+    question_id: str,
+    req: schemas.QuizQuestionUpdate,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    if getattr(current_user, "current_role", "") != "teacher":
+        raise HTTPException(status_code=403, detail="Teachers only.")
+
+    q = db.query(models.QuizQuestion).filter(models.QuizQuestion.id == question_id).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Quiz question not found")
+
+    if req.question_text is not None:
+        q.question_text = req.question_text.strip()
+    if req.cognitive_level is not None:
+        q.cognitive_level = req.cognitive_level.lower().strip()
+    if req.target_pt_ls is not None:
+        q.target_pt_ls = req.target_pt_ls.strip()
+    if req.blooms_level is not None:
+        q.blooms_level = req.blooms_level.strip()
+    if req.option_a is not None:
+        q.option_a = req.option_a
+    if req.option_b is not None:
+        q.option_b = req.option_b
+    if req.option_c is not None:
+        q.option_c = req.option_c
+    if req.option_d is not None:
+        q.option_d = req.option_d
+    if req.correct_option is not None:
+        q.correct_option = req.correct_option.strip()
+    if req.hint_text is not None:
+        q.hint_text = req.hint_text
+    if req.explanation is not None:
+        q.explanation = req.explanation
+
+    db.commit()
+    db.refresh(q)
+    return {"message": "Quiz question updated successfully", "id": q.id}
+
+
+@router.delete("/questions/{question_id}")
+def delete_quiz_question(
+    question_id: str,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    if getattr(current_user, "current_role", "") != "teacher":
+        raise HTTPException(status_code=403, detail="Teachers only.")
+
+    q = db.query(models.QuizQuestion).filter(models.QuizQuestion.id == question_id).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Quiz question not found")
+
+    db.delete(q)
+    db.commit()
+    return {"message": "Quiz question deleted successfully", "id": question_id}
+
 @router.get("/module/{module_id}")
 def get_adaptive_quiz(
     module_id: str,

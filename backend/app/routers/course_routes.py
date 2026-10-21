@@ -288,6 +288,53 @@ def get_study_materials_for_student(
 
     return materials
 
+@router.put("/materials/{material_id}")
+def update_study_material(
+    material_id: str,
+    req: schemas.StudyMaterialUpdate,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    if getattr(current_user, "current_role", "") != "teacher":
+        raise HTTPException(status_code=403, detail="Teachers only.")
+
+    material = db.query(models.StudyMaterial).filter(models.StudyMaterial.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Study material not found")
+
+    if req.title is not None:
+        material.title = req.title.strip()
+    if req.learning_level is not None:
+        material.learning_level = req.learning_level.lower().strip()
+    if req.content_html is not None:
+        material.content_html = req.content_html
+    if req.pdf_url is not None:
+        material.pdf_url = req.pdf_url
+    if req.is_locked_bonus is not None:
+        material.is_locked_bonus = req.is_locked_bonus
+
+    db.commit()
+    db.refresh(material)
+    return material
+
+
+@router.delete("/materials/{material_id}")
+def delete_study_material(
+    material_id: str,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    if getattr(current_user, "current_role", "") != "teacher":
+        raise HTTPException(status_code=403, detail="Teachers only.")
+
+    material = db.query(models.StudyMaterial).filter(models.StudyMaterial.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="Study material not found")
+
+    db.delete(material)
+    db.commit()
+    return {"message": "Study material deleted successfully", "id": material_id}
+
 @router.get("/modules/{module_id}/student-progress")
 def get_student_module_progress(
     module_id: str,

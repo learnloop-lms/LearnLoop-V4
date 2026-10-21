@@ -342,6 +342,73 @@ def get_all_module_task_challenges(
         raise HTTPException(status_code=403, detail="Teachers only.")
     return db.query(models.TaskChallenge).filter(models.TaskChallenge.module_id == module_id).all()
 
+@router.put("/challenges/{task_id}")
+def update_task_challenge(
+    task_id: str,
+    req: schemas.TaskChallengeUpdate,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    if getattr(current_user, "current_role", "") != "teacher":
+        raise HTTPException(status_code=403, detail="Teachers only.")
+
+    t = db.query(models.TaskChallenge).filter(models.TaskChallenge.id == task_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Task challenge not found")
+
+    if req.title is not None:
+        t.title = req.title.strip()
+    if req.problem_statement is not None:
+        t.problem_statement = req.problem_statement.strip()
+    if req.complexity_qlc is not None:
+        t.complexity_qlc = req.complexity_qlc.lower().strip()
+    if req.target_pt_ls is not None:
+        t.target_pt_ls = req.target_pt_ls.strip()
+    if req.blooms_level is not None:
+        t.blooms_level = req.blooms_level.strip()
+    if req.task_type is not None:
+        t.task_type = req.task_type.strip()
+    if req.starter_code is not None:
+        t.starter_code = req.starter_code
+    if req.test_cases is not None:
+        t.test_cases = req.test_cases
+    if req.max_marks is not None:
+        t.max_marks = req.max_marks
+    if req.pdf_attachment is not None:
+        t.pdf_attachment = req.pdf_attachment
+    if req.is_locked_bonus is not None:
+        t.is_locked_bonus = req.is_locked_bonus
+
+    db.commit()
+    db.refresh(t)
+    return {"message": "Task challenge updated successfully", "id": t.id}
+
+
+@router.delete("/challenges/{task_id}")
+def delete_task_challenge(
+    task_id: str,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    if getattr(current_user, "current_role", "") != "teacher":
+        raise HTTPException(status_code=403, detail="Teachers only.")
+
+    t = db.query(models.TaskChallenge).filter(models.TaskChallenge.id == task_id).first()
+    if not t:
+        raise HTTPException(status_code=404, detail="Task challenge not found")
+
+    # Safety check: Prevent deletion if students have already submitted work for this task
+    has_submissions = db.query(models.TaskSubmission).filter(models.TaskSubmission.task_id == task_id).first()
+    if has_submissions:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete this task challenge because student submissions already exist for it. You can edit the task challenge instead."
+        )
+
+    db.delete(t)
+    db.commit()
+    return {"message": "Task challenge deleted successfully", "id": task_id}
+
 @router.get("/module/{module_id}")
 def get_adaptive_task_for_student(
     module_id: str,

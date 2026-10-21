@@ -6,7 +6,8 @@ import { useTheme, ThemeToggle } from '../context/ThemeContext';
 import { 
   ArrowLeft, Plus, BookOpen, HelpCircle, Code, FileText, 
   CheckCircle2, Sparkles, Layers, Award, Copy, Check, ExternalLink,
-  ChevronDown, ChevronUp, AlertCircle, Trash2, FileSpreadsheet, Download, UploadCloud
+  ChevronDown, ChevronUp, AlertCircle, Trash2, FileSpreadsheet, Download, UploadCloud,
+  Eye, Pencil, X, Search
 } from 'lucide-react';
 
 const isValidGoogleDocsUrl = (url) => {
@@ -21,6 +22,39 @@ const isValidGoogleDocsUrl = (url) => {
   } catch {
     return false;
   }
+};
+
+
+const getQuestionTypeInfo = (q) => {
+  const optA = (q.option_a || '').trim().toLowerCase();
+  const optB = (q.option_b || '').trim().toLowerCase();
+  const optC = (q.option_c || '').trim();
+  const optD = (q.option_d || '').trim();
+  const text = (q.question_text || '').toLowerCase();
+
+  const isTf = (optA === 'true' && optB === 'false') ||
+               (optA === 'false' && optB === 'true') ||
+               text.includes('[true/false]') ||
+               text.startsWith('true or false');
+
+  const isFib = text.includes('___') ||
+                text.includes('[blank]') ||
+                (text.includes('fill in the blank') && !optB) ||
+                (!optB && !optC && !optD);
+
+  const isMatch = text.includes('list - i') || text.includes('match') ||
+                  (q.option_a && q.option_a.includes(')-('));
+
+  const isProg = text.includes('def ') || text.includes('class ') ||
+                 text.includes('int main') || text.includes('system.out') ||
+                 text.includes('printf(') || text.includes('public class') ||
+                 text.includes('#include');
+
+  if (isTf) return { label: 'True / False', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700' };
+  if (isFib) return { label: 'Fill in Blank', color: 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-700' };
+  if (isMatch) return { label: 'Match Following', color: 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border-purple-300 dark:border-purple-700' };
+  if (isProg) return { label: 'Programming', color: 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border-blue-300 dark:border-blue-700' };
+  return { label: 'Multiple Choice', color: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700' };
 };
 
 export default function TeacherCourseDetail() {
@@ -53,6 +87,27 @@ export default function TeacherCourseDetail() {
 
   const [activeModuleId, setActiveModuleId] = useState(null);
   const [expandedModules, setExpandedModules] = useState({});
+
+  // Preview & Management modal state
+  const [showManagerModal, setShowManagerModal] = useState(false);
+  const [managerModule, setManagerModule] = useState(null);
+  const [managerTab, setManagerTab] = useState('quizzes'); // 'materials' | 'quizzes' | 'tasks'
+  const [managerLoading, setManagerLoading] = useState(false);
+  const [managerMaterials, setManagerMaterials] = useState([]);
+  const [managerQuizzes, setManagerQuizzes] = useState([]);
+  const [managerTasks, setManagerTasks] = useState([]);
+  const [managerSearch, setManagerSearch] = useState('');
+  const [managerFilterTier, setManagerFilterTier] = useState('all');
+
+  // Edit modals state
+  const [showEditMaterialModal, setShowEditMaterialModal] = useState(false);
+  const [editingMaterial, setEditingMaterial] = useState(null);
+
+  const [showEditQuizModal, setShowEditQuizModal] = useState(false);
+  const [editingQuiz, setEditingQuiz] = useState(null);
+
+  const [showEditTaskModal, setShowEditTaskModal] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
 
   // Module form state
   const [modNo, setModNo] = useState(1);
@@ -136,6 +191,154 @@ export default function TeacherCourseDetail() {
       fetchCourseDetails();
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to delete module');
+    }
+  };
+
+  const openManagerModal = async (mod, initialTab = 'quizzes') => {
+    setManagerModule(mod);
+    setActiveModuleId(mod.id);
+    setManagerTab(initialTab);
+    setManagerSearch('');
+    setManagerFilterTier('all');
+    setShowManagerModal(true);
+    setManagerLoading(true);
+    try {
+      const [matRes, qRes, taskRes] = await Promise.all([
+        axios.get(`${API_BASE}/courses/modules/${mod.id}/materials`).catch(() => ({ data: [] })),
+        axios.get(`${API_BASE}/quizzes/module/${mod.id}/all`).catch(() => ({ data: [] })),
+        axios.get(`${API_BASE}/tasks/module/${mod.id}/all`).catch(() => ({ data: [] }))
+      ]);
+      setManagerMaterials(matRes.data || []);
+      setManagerQuizzes(qRes.data || []);
+      setManagerTasks(taskRes.data || []);
+    } catch (err) {
+      console.error('Failed to load module items:', err);
+    } finally {
+      setManagerLoading(false);
+    }
+  };
+
+  const reloadManagerData = async (modId) => {
+    try {
+      const [matRes, qRes, taskRes] = await Promise.all([
+        axios.get(`${API_BASE}/courses/modules/${modId}/materials`).catch(() => ({ data: [] })),
+        axios.get(`${API_BASE}/quizzes/module/${modId}/all`).catch(() => ({ data: [] })),
+        axios.get(`${API_BASE}/tasks/module/${modId}/all`).catch(() => ({ data: [] }))
+      ]);
+      setManagerMaterials(matRes.data || []);
+      setManagerQuizzes(qRes.data || []);
+      setManagerTasks(taskRes.data || []);
+    } catch (err) {
+      console.error('Failed to refresh module items:', err);
+    }
+  };
+
+  const handleSaveEditMaterial = async (e) => {
+    e.preventDefault();
+    if (!editingMaterial) return;
+    if (editingMaterial.pdf_url && !isValidGoogleDocsUrl(editingMaterial.pdf_url)) {
+      alert('Please enter a valid Google Docs or Google Drive link, or leave it blank.');
+      return;
+    }
+    try {
+      await axios.put(`${API_BASE}/courses/materials/${editingMaterial.id}`, {
+        title: editingMaterial.title,
+        learning_level: editingMaterial.learning_level,
+        content_html: editingMaterial.content_html,
+        pdf_url: editingMaterial.pdf_url || null,
+        is_locked_bonus: editingMaterial.is_locked_bonus || false
+      });
+      setManagerMaterials(prev => prev.map(m => m.id === editingMaterial.id ? { ...m, ...editingMaterial } : m));
+      setShowEditMaterialModal(false);
+      fetchCourseDetails();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to update study material');
+    }
+  };
+
+  const handleDeleteStudyMaterial = async (matId, matTitle) => {
+    if (!window.confirm(`Are you sure you want to delete material "${matTitle || 'this material'}"?`)) return;
+    try {
+      await axios.delete(`${API_BASE}/courses/materials/${matId}`);
+      setManagerMaterials(prev => prev.filter(m => m.id !== matId));
+      fetchCourseDetails();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to delete material');
+    }
+  };
+
+  const handleSaveEditQuiz = async (e) => {
+    e.preventDefault();
+    if (!editingQuiz) return;
+    try {
+      await axios.put(`${API_BASE}/quizzes/questions/${editingQuiz.id}`, {
+        question_text: editingQuiz.question_text,
+        cognitive_level: editingQuiz.cognitive_level,
+        blooms_level: editingQuiz.blooms_level,
+        target_pt_ls: editingQuiz.target_pt_ls,
+        option_a: editingQuiz.option_a,
+        option_b: editingQuiz.option_b || '',
+        option_c: editingQuiz.option_c || '',
+        option_d: editingQuiz.option_d || '',
+        correct_option: (editingQuiz.correct_option || 'A').toUpperCase().trim(),
+        hint_text: editingQuiz.hint_text || null,
+        explanation: editingQuiz.explanation || null
+      });
+      setManagerQuizzes(prev => prev.map(q => q.id === editingQuiz.id ? { ...q, ...editingQuiz } : q));
+      setShowEditQuizModal(false);
+      fetchCourseDetails();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to update quiz question');
+    }
+  };
+
+  const handleDeleteQuizQuestion = async (qId, qSnippet) => {
+    const preview = (qSnippet || '').trim().substring(0, 75);
+    if (!window.confirm(`Are you sure you want to delete this quiz question?\n\n"${preview}..."`)) return;
+    try {
+      await axios.delete(`${API_BASE}/quizzes/questions/${qId}`);
+      setManagerQuizzes(prev => prev.filter(q => q.id !== qId));
+      fetchCourseDetails();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to delete quiz question');
+    }
+  };
+
+  const handleSaveEditTask = async (e) => {
+    e.preventDefault();
+    if (!editingTask) return;
+    if (editingTask.pdf_attachment && !isValidGoogleDocsUrl(editingTask.pdf_attachment)) {
+      alert('Please enter a valid Google Docs or Google Drive link, or leave it blank.');
+      return;
+    }
+    try {
+      await axios.put(`${API_BASE}/tasks/challenges/${editingTask.id}`, {
+        title: editingTask.title,
+        problem_statement: editingTask.problem_statement,
+        task_type: editingTask.task_type,
+        complexity_qlc: editingTask.complexity_qlc,
+        blooms_level: editingTask.blooms_level,
+        target_pt_ls: editingTask.target_pt_ls,
+        max_marks: parseInt(editingTask.max_marks || 100),
+        pdf_attachment: editingTask.pdf_attachment || null,
+        is_locked_bonus: editingTask.is_locked_bonus || false
+      });
+      setManagerTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, ...editingTask } : t));
+      setShowEditTaskModal(false);
+      fetchCourseDetails();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to update task challenge');
+    }
+  };
+
+  const handleDeleteTaskChallenge = async (taskId, taskTitle) => {
+    if (!window.confirm(`Are you sure you want to delete task challenge "${taskTitle || 'this challenge'}"?`)) return;
+    try {
+      await axios.delete(`${API_BASE}/tasks/challenges/${taskId}`);
+      setManagerTasks(prev => prev.filter(t => t.id !== taskId));
+      fetchCourseDetails();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to delete task challenge');
     }
   };
 
@@ -587,6 +790,14 @@ export default function TeacherCourseDetail() {
                         >
                           <Plus className="w-4 h-4" /> Add Study Material
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={() => openManagerModal(m, 'materials')}
+                          className="w-full mt-2 py-2 rounded-xl font-bold text-xs border border-blue-500/40 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> Preview & Manage Materials ({m.materials_count || 0})
+                        </button>
                       </div>
 
                       {/* Pillar 2: Adaptive Quiz */}
@@ -640,6 +851,14 @@ export default function TeacherCourseDetail() {
                             <FileSpreadsheet className="w-4 h-4" /> Excel Upload
                           </button>
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={() => openManagerModal(m, 'quizzes')}
+                          className="w-full mt-2 py-2 rounded-xl font-bold text-xs border border-indigo-500/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> Preview & Manage Questions ({m.quizzes_breakdown?.total || 0})
+                        </button>
                       </div>
 
                       {/* Pillar 3: Coding & Descriptive Task */}
@@ -700,6 +919,14 @@ export default function TeacherCourseDetail() {
                             <FileSpreadsheet className="w-4 h-4" /> Excel Upload
                           </button>
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={() => openManagerModal(m, 'tasks')}
+                          className="w-full mt-2 py-2 rounded-xl font-bold text-xs border border-purple-500/40 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> Preview & Manage Tasks ({m.tasks_breakdown?.total || 0})
+                        </button>
                       </div>
                     </div>
 
@@ -1495,6 +1722,920 @@ export default function TeacherCourseDetail() {
                   className="flex-1 py-3 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold text-sm cursor-pointer shadow-md flex items-center justify-center gap-2 transition"
                 >
                   {uploadingTaskExcel ? 'Importing Challenges...' : 'Import to Tasks'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 6: PREVIEW & MANAGEMENT MODAL (MATERIALS, QUIZZES, TASKS)           */}
+      {/* ========================================================================= */}
+      {showManagerModal && managerModule && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 md:p-6 overflow-hidden">
+          <div className={`w-full max-w-5xl h-[90vh] flex flex-col rounded-3xl border shadow-2xl overflow-hidden ${
+            isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-slate-900 border-slate-800 text-white'
+          }`}>
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
+                    Module #{managerModule.module_no}
+                  </span>
+                  <h3 className="text-lg md:text-xl font-black truncate max-w-md md:max-w-xl">
+                    {managerModule.concept_name}
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Preview, inspect questions/materials/tasks, make instant edits, or delete accidental uploads.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowManagerModal(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Navigation Tabs & Actions Toolbar */}
+            <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-50/70 dark:bg-slate-950/40 shrink-0">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setManagerTab('quizzes')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                    managerTab === 'quizzes'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <HelpCircle className="w-3.5 h-3.5" />
+                  Quiz Questions ({managerQuizzes.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setManagerTab('materials')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                    managerTab === 'materials'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  Study Materials ({managerMaterials.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setManagerTab('tasks')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                    managerTab === 'tasks'
+                      ? 'bg-purple-600 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <Code className="w-3.5 h-3.5" />
+                  Task Challenges ({managerTasks.length})
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                {/* Search Bar */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={managerSearch}
+                    onChange={(e) => setManagerSearch(e.target.value)}
+                    placeholder="Search statement or title..."
+                    className="pl-8 pr-3 py-1.5 rounded-xl border text-xs bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 w-44 md:w-56"
+                  />
+                </div>
+
+                {/* Quick Add Button */}
+                {managerTab === 'quizzes' && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveModuleId(managerModule.id); setShowQuizModal(true); }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Question
+                  </button>
+                )}
+                {managerTab === 'materials' && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveModuleId(managerModule.id); setShowMaterialModal(true); }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Material
+                  </button>
+                )}
+                {managerTab === 'tasks' && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveModuleId(managerModule.id); setShowTaskModal(true); }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Task
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
+              {managerLoading ? (
+                <div className="flex flex-col items-center justify-center h-64 text-slate-400 text-sm gap-3">
+                  <div className="w-7 h-7 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span>Loading module items...</span>
+                </div>
+              ) : (
+                <>
+                  {/* TAB 1: QUIZZES */}
+                  {managerTab === 'quizzes' && (
+                    managerQuizzes.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-64 text-slate-400 text-center p-6 border-2 border-dashed rounded-2xl border-slate-200 dark:border-slate-800">
+                        <HelpCircle className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-2" />
+                        <p className="font-bold text-sm text-slate-600 dark:text-slate-300">No quiz questions found in this module</p>
+                        <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                          Use "+ Add Question" or "Excel Upload" to populate questions for this module.
+                        </p>
+                      </div>
+                    ) : (
+                      managerQuizzes
+                        .filter(q => {
+                          if (!managerSearch) return true;
+                          const s = managerSearch.toLowerCase();
+                          return (q.question_text || '').toLowerCase().includes(s) ||
+                                 (q.option_a || '').toLowerCase().includes(s) ||
+                                 (q.target_pt_ls || '').toLowerCase().includes(s) ||
+                                 (q.blooms_level || '').toLowerCase().includes(s);
+                        })
+                        .map((q, idx) => {
+                          const typeInfo = getQuestionTypeInfo(q);
+                          const correctOpt = (q.correct_option || 'A').toUpperCase().trim();
+                          const isFib = typeInfo.label === 'Fill in Blank';
+                          const isTf = typeInfo.label === 'True / False';
+
+                          return (
+                            <div
+                              key={q.id || idx}
+                              className={`p-4 md:p-5 rounded-2xl border transition shadow-xs ${
+                                isLight ? 'bg-white border-slate-200 hover:border-slate-300' : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-4 mb-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-mono text-xs font-black px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                    Q#{idx + 1}
+                                  </span>
+                                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${typeInfo.color}`}>
+                                    {typeInfo.label}
+                                  </span>
+                                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+                                    (q.cognitive_level || '').toLowerCase().includes('slow') || (q.cognitive_level || '').toLowerCase() === 'easy'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                      : (q.cognitive_level || '').toLowerCase().includes('fast') || (q.cognitive_level || '').toLowerCase() === 'hard'
+                                      ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300'
+                                      : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300'
+                                  }`}>
+                                    Tier: {q.cognitive_level}
+                                  </span>
+                                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                    Bloom: {q.blooms_level || 'Remembering'}
+                                  </span>
+                                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                    PT-LS: {q.target_pt_ls || 'Universal'}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingQuiz({ ...q });
+                                      setShowEditQuizModal(true);
+                                    }}
+                                    className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition cursor-pointer"
+                                    title="Edit Question"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteQuizQuestion(q.id, q.question_text)}
+                                    className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer"
+                                    title="Delete Question"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Question Text */}
+                              <div className="font-mono text-xs md:text-sm whitespace-pre-wrap leading-relaxed text-slate-800 dark:text-slate-100 bg-slate-50/50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800/80 mb-3">
+                                {q.question_text}
+                              </div>
+
+                              {/* Options / Answer */}
+                              {isFib ? (
+                                <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs">
+                                  <span className="font-bold text-amber-800 dark:text-amber-300 mr-2">Expected Answer (Option A):</span>
+                                  <span className="font-mono font-bold text-slate-800 dark:text-slate-100">{q.option_a || '—'}</span>
+                                </div>
+                              ) : isTf ? (
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                  <div className={`p-2.5 rounded-xl border font-bold flex items-center justify-between ${
+                                    correctOpt === 'A' || correctOpt === 'TRUE'
+                                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700'
+                                      : 'bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-400'
+                                  }`}>
+                                    <span>(A) True</span>
+                                    {(correctOpt === 'A' || correctOpt === 'TRUE') && <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded">Correct</span>}
+                                  </div>
+                                  <div className={`p-2.5 rounded-xl border font-bold flex items-center justify-between ${
+                                    correctOpt === 'B' || correctOpt === 'FALSE'
+                                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700'
+                                      : 'bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-400'
+                                  }`}>
+                                    <span>(B) False</span>
+                                    {(correctOpt === 'B' || correctOpt === 'FALSE') && <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded">Correct</span>}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                                  {[
+                                    { key: 'A', text: q.option_a },
+                                    { key: 'B', text: q.option_b },
+                                    { key: 'C', text: q.option_c },
+                                    { key: 'D', text: q.option_d }
+                                  ].filter(o => o.text && o.text.trim()).map(opt => {
+                                    const isCorrect = correctOpt === opt.key;
+                                    return (
+                                      <div
+                                        key={opt.key}
+                                        className={`p-2.5 rounded-xl border flex items-start justify-between gap-2 ${
+                                          isCorrect
+                                            ? 'bg-emerald-50/80 border-emerald-300 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700 font-semibold'
+                                            : 'bg-slate-50/60 border-slate-200 text-slate-700 dark:bg-slate-900/60 dark:border-slate-800 dark:text-slate-300'
+                                        }`}
+                                      >
+                                        <div className="flex items-start gap-1.5">
+                                          <span className="font-mono font-bold shrink-0">({opt.key})</span>
+                                          <span className="break-words">{opt.text}</span>
+                                        </div>
+                                        {isCorrect && (
+                                          <span className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded shrink-0">
+                                            ✓ Correct
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {/* Hint & Explanation */}
+                              {(q.hint_text || q.explanation) && (
+                                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-3 text-[11px] text-slate-500">
+                                  {q.hint_text && (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-bold text-amber-600 dark:text-amber-400">💡 Hint:</span>
+                                      <span>{q.hint_text}</span>
+                                    </div>
+                                  )}
+                                  {q.explanation && (
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-bold text-indigo-600 dark:text-indigo-400">📖 Explanation:</span>
+                                      <span>{q.explanation}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                    )
+                  )}
+
+                  {/* TAB 2: STUDY MATERIALS */}
+                  {managerTab === 'materials' && (
+                    managerMaterials.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-64 text-slate-400 text-center p-6 border-2 border-dashed rounded-2xl border-slate-200 dark:border-slate-800">
+                        <BookOpen className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-2" />
+                        <p className="font-bold text-sm text-slate-600 dark:text-slate-300">No study materials uploaded for this module</p>
+                        <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                          Click "+ Add Material" above to upload content for slow, average, or fast learners.
+                        </p>
+                      </div>
+                    ) : (
+                      managerMaterials
+                        .filter(m => {
+                          if (!managerSearch) return true;
+                          const s = managerSearch.toLowerCase();
+                          return (m.title || '').toLowerCase().includes(s) ||
+                                 (m.learning_level || '').toLowerCase().includes(s);
+                        })
+                        .map((mat, idx) => (
+                          <div
+                            key={mat.id || idx}
+                            className={`p-4 md:p-5 rounded-2xl border transition shadow-xs ${
+                              isLight ? 'bg-white border-slate-200 hover:border-slate-300' : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-4 mb-2">
+                              <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+                                    (mat.learning_level || '').toLowerCase().includes('slow') || (mat.learning_level || '').toLowerCase() === 'basic'
+                                      ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300'
+                                      : (mat.learning_level || '').toLowerCase().includes('fast') || (mat.learning_level || '').toLowerCase() === 'advanced'
+                                      ? 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300'
+                                      : 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300'
+                                  }`}>
+                                    Tier: {mat.learning_level}
+                                  </span>
+                                  {mat.is_locked_bonus && (
+                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300">
+                                      🎁 Mystery Box Bonus
+                                    </span>
+                                  )}
+                                </div>
+                                <h4 className="font-bold text-sm md:text-base text-slate-800 dark:text-slate-100">
+                                  {mat.title}
+                                </h4>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingMaterial({ ...mat });
+                                    setShowEditMaterialModal(true);
+                                  }}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer"
+                                  title="Edit Material"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteStudyMaterial(mat.id, mat.title)}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer"
+                                  title="Delete Material"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {mat.content_html && (
+                              <div className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50/60 dark:bg-slate-900/60 p-3 rounded-xl border border-slate-100 dark:border-slate-800/80 mb-2 line-clamp-3">
+                                {mat.content_html}
+                              </div>
+                            )}
+
+                            {mat.pdf_url && (
+                              <div className="flex items-center gap-2 mt-2 text-xs">
+                                <span className="font-bold text-slate-500">Google Docs / Drive:</span>
+                                <a
+                                  href={mat.pdf_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-semibold truncate max-w-sm"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                                  <span className="truncate">{mat.pdf_url}</span>
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        ))
+                    )
+                  )}
+
+                  {/* TAB 3: TASKS */}
+                  {managerTab === 'tasks' && (
+                    managerTasks.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-64 text-slate-400 text-center p-6 border-2 border-dashed rounded-2xl border-slate-200 dark:border-slate-800">
+                        <Code className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-2" />
+                        <p className="font-bold text-sm text-slate-600 dark:text-slate-300">No task challenges uploaded for this module</p>
+                        <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                          Use "+ Add Task" or "Excel Upload" to add coding workbench challenges or descriptive tasks.
+                        </p>
+                      </div>
+                    ) : (
+                      managerTasks
+                        .filter(t => {
+                          if (!managerSearch) return true;
+                          const s = managerSearch.toLowerCase();
+                          return (t.title || '').toLowerCase().includes(s) ||
+                                 (t.problem_statement || '').toLowerCase().includes(s) ||
+                                 (t.target_pt_ls || '').toLowerCase().includes(s);
+                        })
+                        .map((tsk, idx) => (
+                          <div
+                            key={tsk.id || idx}
+                            className={`p-4 md:p-5 rounded-2xl border transition shadow-xs ${
+                              isLight ? 'bg-white border-slate-200 hover:border-slate-300' : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-4 mb-2">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                                  <span className="font-mono text-xs font-black px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                    Task #{idx + 1}
+                                  </span>
+                                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300">
+                                    {tsk.task_type === 'descriptive' ? 'Descriptive Essay' : 'Coding Workbench'}
+                                  </span>
+                                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+                                    (tsk.complexity_qlc || '').toLowerCase().includes('basic')
+                                      ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300'
+                                      : (tsk.complexity_qlc || '').toLowerCase().includes('adv')
+                                      ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300'
+                                      : 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300'
+                                  }`}>
+                                    QLC: {tsk.complexity_qlc}
+                                  </span>
+                                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                    Bloom: {tsk.blooms_level || 'Applying'}
+                                  </span>
+                                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                    PT-LS: {tsk.target_pt_ls || 'Universal'}
+                                  </span>
+                                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300">
+                                    {tsk.max_marks || 100} Marks
+                                  </span>
+                                  {tsk.is_locked_bonus && (
+                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300">
+                                      🎁 Mystery Challenge
+                                    </span>
+                                  )}
+                                </div>
+                                <h4 className="font-bold text-sm md:text-base text-slate-800 dark:text-slate-100">
+                                  {tsk.title}
+                                </h4>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingTask({ ...tsk });
+                                    setShowEditTaskModal(true);
+                                  }}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition cursor-pointer"
+                                  title="Edit Task"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteTaskChallenge(tsk.id, tsk.title)}
+                                  className="p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer"
+                                  title="Delete Task"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="font-mono text-xs whitespace-pre-wrap leading-relaxed text-slate-700 dark:text-slate-200 bg-slate-50/50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800/80 mb-2">
+                              {tsk.problem_statement}
+                            </div>
+
+                            {tsk.pdf_attachment && (
+                              <div className="flex items-center gap-2 mt-2 text-xs">
+                                <span className="font-bold text-slate-500">Google Docs / Guide:</span>
+                                <a
+                                  href={tsk.pdf_attachment}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 font-semibold truncate max-w-sm"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                                  <span className="truncate">{tsk.pdf_attachment}</span>
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        ))
+                    )
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 7: EDIT STUDY MATERIAL MODAL                                       */}
+      {/* ========================================================================= */}
+      {showEditMaterialModal && editingMaterial && (
+        <div className="fixed inset-0 z-60 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className={`w-full max-w-lg rounded-3xl p-8 border shadow-2xl ${
+            isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-slate-900 border-slate-800 text-white'
+          }`}>
+            <h3 className="text-xl font-black mb-1">Edit Study Material</h3>
+            <p className="text-xs text-slate-500 mb-6">Modify content, tier assignment, or attached Google Docs link.</p>
+
+            <form onSubmit={handleSaveEditMaterial} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold mb-1">Target Cognitive Tier</label>
+                <select
+                  value={editingMaterial.learning_level || 'average'}
+                  onChange={(e) => setEditingMaterial({ ...editingMaterial, learning_level: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border text-sm font-bold bg-slate-50 dark:bg-slate-800"
+                >
+                  <option value="slow">Basic Tier (for Stepper / Slow Learners)</option>
+                  <option value="average">Intermediate Tier (for Jogger / Medium Learners)</option>
+                  <option value="fast">Advanced Tier (for Glider / Fast Learners)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1">Material Title</label>
+                <input
+                  type="text"
+                  required
+                  value={editingMaterial.title || ''}
+                  onChange={(e) => setEditingMaterial({ ...editingMaterial, title: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border text-sm bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1">Content Body (Notes, Text or HTML)</label>
+                <textarea
+                  rows={4}
+                  required
+                  value={editingMaterial.content_html || ''}
+                  onChange={(e) => setEditingMaterial({ ...editingMaterial, content_html: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border text-sm bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1">Google Docs Link (Optional)</label>
+                <input
+                  type="url"
+                  value={editingMaterial.pdf_url || ''}
+                  onChange={(e) => setEditingMaterial({ ...editingMaterial, pdf_url: e.target.value })}
+                  placeholder="https://docs.google.com/document/d/..."
+                  className="w-full p-2.5 rounded-xl border text-sm bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800">
+                <input
+                  type="checkbox"
+                  id="editMatIsBonus"
+                  checked={Boolean(editingMaterial.is_locked_bonus)}
+                  onChange={(e) => setEditingMaterial({ ...editingMaterial, is_locked_bonus: e.target.checked })}
+                  className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
+                />
+                <label htmlFor="editMatIsBonus" className="text-xs font-semibold text-purple-900 dark:text-purple-300 cursor-pointer">
+                  Lock as Mentor Mystery Box Material (Bonus unlockable content)
+                </label>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowEditMaterialModal(false)}
+                  className="flex-1 py-3 rounded-xl border font-bold text-sm hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm cursor-pointer shadow-md"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 8: EDIT QUIZ QUESTION MODAL                                         */}
+      {/* ========================================================================= */}
+      {showEditQuizModal && editingQuiz && (
+        <div className="fixed inset-0 z-60 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className={`w-full max-w-2xl rounded-3xl p-8 border shadow-2xl my-8 ${
+            isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-slate-900 border-slate-800 text-white'
+          }`}>
+            <h3 className="text-xl font-black mb-1">Edit Quiz Question</h3>
+            <p className="text-xs text-slate-500 mb-6">Modify question text, difficulty tier, target archetype, or options.</p>
+
+            <form onSubmit={handleSaveEditQuiz} className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold mb-1">Difficulty Level</label>
+                  <select
+                    value={editingQuiz.cognitive_level || 'average'}
+                    onChange={(e) => setEditingQuiz({ ...editingQuiz, cognitive_level: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border text-sm font-bold bg-slate-50 dark:bg-slate-800"
+                  >
+                    <option value="slow">Easy (Q_easy)</option>
+                    <option value="average">Medium (Q_med)</option>
+                    <option value="fast">Hard (Q_hard)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1">Bloom's Taxonomy</label>
+                  <select
+                    value={editingQuiz.blooms_level || 'Remembering'}
+                    onChange={(e) => setEditingQuiz({ ...editingQuiz, blooms_level: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border text-sm font-bold bg-slate-50 dark:bg-slate-800"
+                  >
+                    <option value="Remembering">Remembering</option>
+                    <option value="Understanding">Understanding</option>
+                    <option value="Applying">Applying</option>
+                    <option value="Analyzing">Analyzing</option>
+                    <option value="Evaluating">Evaluating</option>
+                    <option value="Creating">Creating</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1">Target PT-LS</label>
+                  <select
+                    value={editingQuiz.target_pt_ls || 'Universal'}
+                    onChange={(e) => setEditingQuiz({ ...editingQuiz, target_pt_ls: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border text-sm font-bold bg-slate-50 dark:bg-slate-800"
+                  >
+                    <option value="Universal">Universal</option>
+                    <option value="Visionaries">Visionaries</option>
+                    <option value="Mentors">Mentors</option>
+                    <option value="Conquerors">Conquerors</option>
+                    <option value="Pioneers">Pioneers</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1">Question Statement</label>
+                <textarea
+                  rows={4}
+                  required
+                  value={editingQuiz.question_text || ''}
+                  onChange={(e) => setEditingQuiz({ ...editingQuiz, question_text: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border text-sm font-mono bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold mb-1">Option A (or Blank Answer)</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingQuiz.option_a || ''}
+                    onChange={(e) => setEditingQuiz({ ...editingQuiz, option_a: e.target.value })}
+                    className="w-full p-2 rounded-xl border text-sm bg-slate-50 dark:bg-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold mb-1">Option B (Leave blank if FIB)</label>
+                  <input
+                    type="text"
+                    value={editingQuiz.option_b || ''}
+                    onChange={(e) => setEditingQuiz({ ...editingQuiz, option_b: e.target.value })}
+                    className="w-full p-2 rounded-xl border text-sm bg-slate-50 dark:bg-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold mb-1">Option C</label>
+                  <input
+                    type="text"
+                    value={editingQuiz.option_c || ''}
+                    onChange={(e) => setEditingQuiz({ ...editingQuiz, option_c: e.target.value })}
+                    className="w-full p-2 rounded-xl border text-sm bg-slate-50 dark:bg-slate-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold mb-1">Option D</label>
+                  <input
+                    type="text"
+                    value={editingQuiz.option_d || ''}
+                    onChange={(e) => setEditingQuiz({ ...editingQuiz, option_d: e.target.value })}
+                    className="w-full p-2 rounded-xl border text-sm bg-slate-50 dark:bg-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold mb-1">Correct Option Key</label>
+                  <select
+                    value={editingQuiz.correct_option || 'A'}
+                    onChange={(e) => setEditingQuiz({ ...editingQuiz, correct_option: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border text-sm font-bold bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-slate-800 dark:text-emerald-400"
+                  >
+                    <option value="A">Option A (or Blank Answer)</option>
+                    <option value="B">Option B</option>
+                    <option value="C">Option C</option>
+                    <option value="D">Option D</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1">Hint Text</label>
+                  <input
+                    type="text"
+                    value={editingQuiz.hint_text || ''}
+                    onChange={(e) => setEditingQuiz({ ...editingQuiz, hint_text: e.target.value })}
+                    placeholder="Optional hint for students"
+                    className="w-full p-2.5 rounded-xl border text-sm bg-slate-50 dark:bg-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1">Explanation (Visible to Visionaries)</label>
+                <textarea
+                  rows={2}
+                  value={editingQuiz.explanation || ''}
+                  onChange={(e) => setEditingQuiz({ ...editingQuiz, explanation: e.target.value })}
+                  placeholder="Detailed rationale for the correct answer..."
+                  className="w-full p-2 rounded-xl border text-sm bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowEditQuizModal(false)}
+                  className="flex-1 py-3 rounded-xl border font-bold text-sm hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm cursor-pointer shadow-md"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 9: EDIT TASK CHALLENGE MODAL                                       */}
+      {/* ========================================================================= */}
+      {showEditTaskModal && editingTask && (
+        <div className="fixed inset-0 z-60 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className={`w-full max-w-2xl rounded-3xl p-8 border shadow-2xl my-8 ${
+            isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-slate-900 border-slate-800 text-white'
+          }`}>
+            <h3 className="text-xl font-black mb-1">Edit Task Challenge</h3>
+            <p className="text-xs text-slate-500 mb-6">Modify problem statement, complexity tier, or max marks.</p>
+
+            <form onSubmit={handleSaveEditTask} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold mb-1">Task Type</label>
+                  <select
+                    value={editingTask.task_type || 'programming'}
+                    onChange={(e) => setEditingTask({ ...editingTask, task_type: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border text-sm font-bold bg-slate-50 dark:bg-slate-800"
+                  >
+                    <option value="programming">Programming (Workbench)</option>
+                    <option value="descriptive">Descriptive (Essay / Analysis)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1">Complexity (QLC)</label>
+                  <select
+                    value={editingTask.complexity_qlc || 'intermediate'}
+                    onChange={(e) => setEditingTask({ ...editingTask, complexity_qlc: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border text-sm font-bold bg-slate-50 dark:bg-slate-800"
+                  >
+                    <option value="basic">Basic</option>
+                    <option value="intermediate">Intermediate</option>
+                    <option value="advanced">Advanced</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold mb-1">Bloom's Taxonomy</label>
+                  <select
+                    value={editingTask.blooms_level || 'Applying'}
+                    onChange={(e) => setEditingTask({ ...editingTask, blooms_level: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border text-sm font-bold bg-slate-50 dark:bg-slate-800"
+                  >
+                    <option value="Remembering">Remembering</option>
+                    <option value="Understanding">Understanding</option>
+                    <option value="Applying">Applying</option>
+                    <option value="Analyzing">Analyzing</option>
+                    <option value="Evaluating">Evaluating</option>
+                    <option value="Creating">Creating</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1">Target PT-LS</label>
+                  <select
+                    value={editingTask.target_pt_ls || 'Universal'}
+                    onChange={(e) => setEditingTask({ ...editingTask, target_pt_ls: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border text-sm font-bold bg-slate-50 dark:bg-slate-800"
+                  >
+                    <option value="Universal">Universal</option>
+                    <option value="Visionaries">Visionaries</option>
+                    <option value="Mentors">Mentors</option>
+                    <option value="Conquerors">Conquerors</option>
+                    <option value="Pioneers">Pioneers</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1">Task Title</label>
+                <input
+                  type="text"
+                  required
+                  value={editingTask.title || ''}
+                  onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border text-sm bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1">Problem Statement / Requirements</label>
+                <textarea
+                  rows={5}
+                  required
+                  value={editingTask.problem_statement || ''}
+                  onChange={(e) => setEditingTask({ ...editingTask, problem_statement: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border text-sm font-mono bg-slate-50 dark:bg-slate-800"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold mb-1">Google Docs Link (Optional)</label>
+                  <input
+                    type="url"
+                    value={editingTask.pdf_attachment || ''}
+                    onChange={(e) => setEditingTask({ ...editingTask, pdf_attachment: e.target.value })}
+                    className="w-full p-2 rounded-xl border text-sm bg-slate-50 dark:bg-slate-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1">Max Marks</label>
+                  <input
+                    type="number"
+                    min="10"
+                    max="100"
+                    value={editingTask.max_marks || 100}
+                    onChange={(e) => setEditingTask({ ...editingTask, max_marks: e.target.value })}
+                    className="w-full p-2 rounded-xl border text-sm bg-slate-50 dark:bg-slate-800"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800">
+                <input
+                  type="checkbox"
+                  id="editTaskIsBonus"
+                  checked={Boolean(editingTask.is_locked_bonus)}
+                  onChange={(e) => setEditingTask({ ...editingTask, is_locked_bonus: e.target.checked })}
+                  className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
+                />
+                <label htmlFor="editTaskIsBonus" className="text-xs font-semibold text-purple-900 dark:text-purple-300 cursor-pointer">
+                  Lock as Mentor Mystery Box Challenge (Bonus challenge)
+                </label>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowEditTaskModal(false)}
+                  className="flex-1 py-3 rounded-xl border font-bold text-sm hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm cursor-pointer shadow-md"
+                >
+                  Save Changes
                 </button>
               </div>
             </form>

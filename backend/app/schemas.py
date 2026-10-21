@@ -157,6 +157,20 @@ class StudyMaterialOut(BaseModel):
     class Config:
         from_attributes = True
 
+class StudyMaterialUpdate(BaseModel):
+    learning_level: Optional[str] = None
+    title: Optional[str] = None
+    content_html: Optional[str] = None
+    pdf_url: Optional[str] = None
+    is_locked_bonus: Optional[bool] = None
+
+    @field_validator("pdf_url")
+    @classmethod
+    def validate_pdf_url(cls, v):
+        if not v or not str(v).strip():
+            return None
+        return validate_google_docs_link(v)
+
 # -----------------------------------------------------------------------------
 # Quiz Schemas
 # -----------------------------------------------------------------------------
@@ -188,6 +202,19 @@ class QuizQuestionOut(BaseModel):
     # correct_option and explanation are hidden during active test
     class Config:
         from_attributes = True
+
+class QuizQuestionUpdate(BaseModel):
+    cognitive_level: Optional[str] = None
+    target_pt_ls: Optional[str] = None
+    blooms_level: Optional[str] = None
+    question_text: Optional[str] = None
+    option_a: Optional[str] = None
+    option_b: Optional[str] = None
+    option_c: Optional[str] = None
+    option_d: Optional[str] = None
+    correct_option: Optional[str] = None
+    hint_text: Optional[str] = None
+    explanation: Optional[str] = None
 
 class QuizAnswerItem(BaseModel):
     question_id: str
@@ -246,6 +273,26 @@ class TaskChallengeOut(BaseModel):
     is_locked_bonus: Optional[bool] = False
     class Config:
         from_attributes = True
+
+class TaskChallengeUpdate(BaseModel):
+    complexity_qlc: Optional[str] = None
+    target_pt_ls: Optional[str] = None
+    blooms_level: Optional[str] = None
+    task_type: Optional[str] = None
+    title: Optional[str] = None
+    problem_statement: Optional[str] = None
+    starter_code: Optional[Dict[str, str]] = None
+    test_cases: Optional[List[Dict[str, Any]]] = None
+    max_marks: Optional[int] = None
+    pdf_attachment: Optional[str] = None
+    is_locked_bonus: Optional[bool] = None
+
+    @field_validator("pdf_attachment")
+    @classmethod
+    def validate_pdf_attachment(cls, v):
+        if not v or not str(v).strip():
+            return None
+        return validate_google_docs_link(v)
 
 class CodeRunRequest(BaseModel):
     language: str
