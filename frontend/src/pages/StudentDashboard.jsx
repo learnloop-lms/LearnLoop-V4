@@ -7,7 +7,8 @@ import {
   BookOpen, Plus, Award, LogOut, ChevronRight, Sparkles, 
   Heart, Zap, Key, Shield, User, Compass, CheckCircle2,
   LayoutDashboard, GraduationCap, Edit3, Lock, Mail, Building, Hash,
-  Clock, Flame, CheckCircle, BarChart3, TrendingUp, ExternalLink
+  Clock, Flame, CheckCircle, BarChart3, TrendingUp, ExternalLink,
+  Gamepad2, ArrowRight
 } from 'lucide-react';
 
 import AppreciationModal from '../components/AppreciationModal';
@@ -401,6 +402,24 @@ export default function StudentDashboard() {
               <User className="w-5 h-5" />
               <span>My Profile</span>
             </button>
+
+            {/* Menu 4: Collaborative Activity */}
+            <Link
+              to="/collaborative"
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl font-bold text-sm transition cursor-pointer border ${
+                isLight 
+                  ? 'bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-transparent border-indigo-200 text-indigo-700 hover:bg-indigo-50' 
+                  : 'bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-transparent border-indigo-900/60 text-indigo-300 hover:bg-indigo-950/40'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Gamepad2 className="w-5 h-5 text-indigo-500 animate-pulse" />
+                <span>Collaborative Activity</span>
+              </div>
+              <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-xs">
+                Squad
+              </span>
+            </Link>
           </div>
 
           {/* Quick Enrolled Classes Card */}
@@ -535,6 +554,41 @@ export default function StudentDashboard() {
                       <p className="text-[11px] text-slate-600 dark:text-slate-400 font-medium mt-0.5">Unlocks advanced concepts</p>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* Collaborative Activity / Game Zone Quick Launch Banner */}
+              <div className={`p-6 rounded-3xl border transition-all ${
+                isLight 
+                  ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 text-white shadow-xl shadow-indigo-500/20' 
+                  : 'bg-gradient-to-r from-indigo-950 via-purple-950 to-slate-900 text-white border-indigo-700/60 shadow-xl'
+              }`}>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center shrink-0">
+                      <Gamepad2 className="w-8 h-8 text-white animate-bounce" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/20 text-white">
+                          Squad Environment
+                        </span>
+                        <span className="text-xs text-white/80 font-bold">4-Member Teams</span>
+                      </div>
+                      <h3 className="text-lg font-black text-white mt-0.5">Collaborative Activity • Game Zone</h3>
+                      <p className="text-xs text-white/80 max-w-xl">
+                        Team up with Visionaries, Pioneers, Mentors, and Conquerors to solve adaptive programming challenges together in real time!
+                      </p>
+                    </div>
+                  </div>
+
+                  <Link
+                    to="/collaborative"
+                    className="px-6 py-3 rounded-2xl bg-white text-indigo-700 hover:bg-slate-100 font-extrabold text-xs shadow-lg transition-transform hover:scale-105 shrink-0 flex items-center justify-center gap-2"
+                  >
+                    <span>Enter Collaborative Platform</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </Link>
                 </div>
               </div>
 

@@ -13,9 +13,10 @@ from app.routers import (
     leaderboard_routes,
     rating_routes,
     peer_routes,
-    revaluation_routes
+    revaluation_routes,
+    collab_routes
 )
-from app import models, auth
+from app import models, collab_models, auth
 
 # Initialize DB tables
 Base.metadata.create_all(bind=engine)
@@ -54,6 +55,7 @@ app.include_router(leaderboard_routes.router, prefix=settings.API_V1_STR)
 app.include_router(rating_routes.router, prefix=settings.API_V1_STR)
 app.include_router(peer_routes.router, prefix=settings.API_V1_STR)
 app.include_router(revaluation_routes.router, prefix=settings.API_V1_STR)
+app.include_router(collab_routes.router, prefix=settings.API_V1_STR)
 
 if os.path.exists(FRONTEND_DIST):
     @app.get("/{full_path:path}")

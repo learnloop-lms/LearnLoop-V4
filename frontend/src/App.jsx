@@ -14,6 +14,8 @@ import LeaderboardView from './pages/LeaderboardView';
 import CollectiblesView from './pages/CollectiblesView';
 import TeacherDashboard from './pages/TeacherDashboard';
 import TeacherCourseDetail from './pages/TeacherCourseDetail';
+import CollaborativeHub from './pages/CollaborativeHub';
+import CollaborativeGameZone from './pages/CollaborativeGameZone';
 
 function ProtectedRoute({ children, role }) {
   const { user, token, loading } = useAuth();
@@ -118,6 +120,24 @@ export default function App() {
               element={
                 <ProtectedRoute role="student">
                   <CollectiblesView />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/collaborative"
+              element={
+                <ProtectedRoute role="student">
+                  <CollaborativeHub />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/collaborative/game-zone/:teamId"
+              element={
+                <ProtectedRoute role="student">
+                  <CollaborativeGameZone />
                 </ProtectedRoute>
               }
             />
