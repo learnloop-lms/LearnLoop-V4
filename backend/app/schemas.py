@@ -47,6 +47,12 @@ class LoginRequest(BaseModel):
     password: str
     role: str = "student" # student or teacher
 
+class PasswordResetRequest(BaseModel):
+    role: str = "student" # student or teacher
+    email: EmailStr
+    identifier: str # regno for student, employee_id for teacher
+    new_password: str
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app.database import get_db
 from app import models, schemas, auth
 from app.services.gamification import regenerate_hearts
@@ -107,6 +108,52 @@ def login(req: schemas.LoginRequest, db: Session = Depends(get_db)):
         avatar_path=getattr(user, "avatar_path", None),
         cognitive_level=getattr(user, "cognitive_level", None)
     )
+
+@router.post("/reset-password")
+def reset_password(req: schemas.PasswordResetRequest, db: Session = Depends(get_db)):
+    role = req.role.lower().strip()
+    email_clean = str(req.email).strip().lower()
+    id_clean = req.identifier.strip()
+
+    if len(req.new_password) < 4:
+        raise HTTPException(status_code=400, detail="New password must be at least 4 characters long.")
+
+    if role == "student":
+        student = db.query(models.Student).filter(
+            func.lower(models.Student.email) == email_clean
+        ).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="No student account found with this email address.")
+
+        if (student.regno or "").strip().lower() != id_clean.lower():
+            raise HTTPException(
+                status_code=400,
+                detail="Verification failed: Register Number does not match the registered record for this email."
+            )
+
+        student.password_hash = auth.get_password_hash(req.new_password)
+        db.commit()
+        return {"success": True, "message": "Password reset successfully. You can now log in with your new password."}
+
+    elif role == "teacher":
+        teacher = db.query(models.Teacher).filter(
+            func.lower(models.Teacher.email) == email_clean
+        ).first()
+        if not teacher:
+            raise HTTPException(status_code=404, detail="No faculty account found with this email address.")
+
+        if (teacher.employee_id or "").strip().lower() != id_clean.lower():
+            raise HTTPException(
+                status_code=400,
+                detail="Verification failed: Employee ID does not match the registered record for this email."
+            )
+
+        teacher.password_hash = auth.get_password_hash(req.new_password)
+        db.commit()
+        return {"success": True, "message": "Password reset successfully. You can now log in with your new password."}
+
+    else:
+        raise HTTPException(status_code=400, detail="Invalid role specified. Must be 'student' or 'teacher'.")
 
 @router.get("/me")
 def get_current_profile(user=Depends(auth.get_current_user), db: Session = Depends(get_db)):
