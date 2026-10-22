@@ -1,7 +1,7 @@
 import math
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 
@@ -1675,3 +1675,135 @@ def post_challenge_role_switch(
     
     db.commit()
     return {"message": f"Your role has been updated to {new_role} for future challenges."}
+
+
+# =====================================================================
+# SQUAD REAL-TIME VOICE CHAT WEBSOCKET & SIGNALING (FREE FIRE STYLE)
+# =====================================================================
+
+class SquadVoiceManager:
+    """
+    Manages in-memory live voice channels per collaborative team.
+    Supports WebRTC signaling (offers, answers, ICE candidates),
+    speaking indicators, mute states, and audio frame relay fallback.
+    Zero external dependencies, zero cost, works on local LAN/college Wi-Fi.
+    """
+    def __init__(self):
+        # team_id -> { student_id: WebSocket }
+        self.rooms: Dict[str, Dict[str, WebSocket]] = {}
+        # student_id -> { name, role, is_speaking, is_muted }
+        self.peer_meta: Dict[str, Dict[str, Any]] = {}
+
+    async def connect(self, team_id: str, student_id: str, websocket: WebSocket):
+        await websocket.accept()
+        if team_id not in self.rooms:
+            self.rooms[team_id] = {}
+        self.rooms[team_id][student_id] = websocket
+
+        # Gather currently connected peers
+        existing_peers = [sid for sid in self.rooms[team_id].keys() if sid != student_id]
+        
+        # Send current room state to newly joined student
+        await websocket.send_json({
+            "type": "room-state",
+            "student_id": student_id,
+            "existing_peers": existing_peers,
+            "peers_meta": {sid: self.peer_meta.get(sid, {}) for sid in self.rooms[team_id].keys()}
+        })
+
+        # Broadcast peer-joined to all other squad members
+        await self.broadcast(
+            team_id,
+            {
+                "type": "peer-joined",
+                "student_id": student_id,
+                "meta": self.peer_meta.get(student_id, {}),
+                "existing_peers": list(self.rooms[team_id].keys())
+            },
+            exclude=student_id
+        )
+
+    def disconnect(self, team_id: str, student_id: str):
+        if team_id in self.rooms and student_id in self.rooms[team_id]:
+            try:
+                del self.rooms[team_id][student_id]
+            except KeyError:
+                pass
+            if not self.rooms[team_id]:
+                try:
+                    del self.rooms[team_id]
+                except KeyError:
+                    pass
+        if student_id in self.peer_meta:
+            try:
+                del self.peer_meta[student_id]
+            except KeyError:
+                pass
+
+    async def send_personal(self, team_id: str, target_student_id: str, message: dict):
+        if team_id in self.rooms and target_student_id in self.rooms[team_id]:
+            ws = self.rooms[team_id][target_student_id]
+            try:
+                await ws.send_json(message)
+            except Exception:
+                self.disconnect(team_id, target_student_id)
+
+    async def broadcast(self, team_id: str, message: dict, exclude: Optional[str] = None):
+        if team_id not in self.rooms:
+            return
+        dead = []
+        for sid, ws in list(self.rooms[team_id].items()):
+            if exclude and sid == exclude:
+                continue
+            try:
+                await ws.send_json(message)
+            except Exception:
+                dead.append(sid)
+        for sid in dead:
+            self.disconnect(team_id, sid)
+
+
+voice_manager = SquadVoiceManager()
+
+
+@router.websocket("/ws/voice/{team_id}/{student_id}")
+async def squad_voice_websocket(websocket: WebSocket, team_id: str, student_id: str):
+    """
+    WebSocket endpoint for live squad voice communication.
+    Clients exchange WebRTC SDP offers/answers, ICE candidates, and speaking states.
+    """
+    await voice_manager.connect(team_id, student_id, websocket)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type")
+            target = data.get("target")
+
+            # Store peer metadata (e.g. role, name, muted)
+            if msg_type in ("meta-update", "speaking-state", "mute-state"):
+                if student_id not in voice_manager.peer_meta:
+                    voice_manager.peer_meta[student_id] = {}
+                voice_manager.peer_meta[student_id].update(data.get("meta", {}))
+                data["sender"] = student_id
+                await voice_manager.broadcast(team_id, data, exclude=student_id)
+            elif target:
+                # Direct WebRTC signal to target peer
+                data["sender"] = student_id
+                await voice_manager.send_personal(team_id, target, data)
+            else:
+                # Room-wide broadcast
+                data["sender"] = student_id
+                await voice_manager.broadcast(team_id, data, exclude=student_id)
+    except WebSocketDisconnect:
+        voice_manager.disconnect(team_id, student_id)
+        await voice_manager.broadcast(
+            team_id,
+            {
+                "type": "peer-left",
+                "student_id": student_id,
+                "remaining_peers": list(voice_manager.rooms.get(team_id, {}).keys())
+            }
+        )
+    except Exception:
+        voice_manager.disconnect(team_id, student_id)
+

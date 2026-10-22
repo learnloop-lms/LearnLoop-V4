@@ -11,6 +11,7 @@ import {
   ArrowDown, ArrowUp, GitBranch, CornerDownRight, Maximize2,
   CheckSquare, MessageCircle, AlertCircle, CornerDownLeft
 } from 'lucide-react';
+import SquadVoiceBar from '../components/SquadVoiceBar';
 
 export default function CollaborativeGameZone() {
   const { teamId } = useParams();
@@ -22,6 +23,7 @@ export default function CollaborativeGameZone() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [timerSeconds, setTimerSeconds] = useState(0);
+  const [liveSpeakingPeers, setLiveSpeakingPeers] = useState({});
 
   // Anti-Cheat & Game Zone Arena Lockdown
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -740,25 +742,31 @@ export default function CollaborativeGameZone() {
           </div>
         </div>
 
-        {/* Active Members Bar */}
+        {/* Active Members Bar with Live Voice Indicators */}
         <div className="flex items-center gap-2">
           {data.members.map((m) => {
             const roleCol = getRoleColor(m.role);
             const isMe = m.student_id === data.me.student_id;
+            const isSpeaking = !!liveSpeakingPeers[m.student_id];
             return (
               <div
                 key={m.student_id}
-                className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 text-xs transition ${
-                  isMe ? 'bg-slate-800 border-indigo-500/80' : 'bg-slate-900/60 border-slate-800'
+                className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 text-xs transition-all duration-200 ${
+                  isSpeaking
+                    ? 'ring-2 ring-emerald-400 border-emerald-400 bg-emerald-950/80 shadow-lg shadow-emerald-500/40 scale-105'
+                    : isMe
+                    ? 'bg-slate-800 border-indigo-500/80'
+                    : 'bg-slate-900/60 border-slate-800'
                 }`}
               >
                 <div className="relative">
-                  <span className={`w-2 h-2 rounded-full block ${m.is_on_break ? 'bg-amber-400 animate-ping' : m.is_away ? 'bg-red-400' : 'bg-emerald-400'}`} />
+                  <span className={`w-2 h-2 rounded-full block ${isSpeaking ? 'bg-emerald-300 animate-ping' : m.is_on_break ? 'bg-amber-400 animate-ping' : m.is_away ? 'bg-red-400' : 'bg-emerald-400'}`} />
                 </div>
                 <div className="text-left">
                   <div className="flex items-center gap-1 font-bold text-[11px] text-white">
                     {m.name} {isMe && '(You)'}
                     {m.is_leader && <Crown className="w-3 h-3 text-amber-400 fill-amber-400" title="Squad Leader" />}
+                    {isSpeaking && <span className="text-[10px] text-emerald-400 animate-bounce" title="Speaking">🎙️</span>}
                   </div>
                   <span className={`text-[9px] font-black uppercase tracking-wider block ${roleCol.text}`}>
                     {m.role} {m.is_on_break ? '• ON BREAK' : m.is_away ? '• AWAY' : ''}
@@ -829,6 +837,14 @@ export default function CollaborativeGameZone() {
           </button>
         </div>
       </header>
+
+      {/* Free Fire Style Tactical Squad Live Voice Bar */}
+      <SquadVoiceBar
+        teamId={teamId}
+        me={data.me}
+        members={data.members}
+        onSpeakingMapChange={setLiveSpeakingPeers}
+      />
 
       {/* ========================================================
           3-COLUMN GAME ZONE WORKSPACE:
