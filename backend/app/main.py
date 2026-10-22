@@ -219,5 +219,69 @@ def seed_initial_data():
             ))
 
             db.commit()
+
+        # -------------------------------------------------------------
+        # Ensure Collaborative Test Squad Accounts & Course Enrollment Exist
+        # -------------------------------------------------------------
+        test_teacher = db.query(models.Teacher).filter(models.Teacher.email == "teacher@tce.edu").first()
+        if not test_teacher:
+            test_teacher = models.Teacher(
+                employee_id="TCE_FAC_001",
+                name="Dr. Scholar Lead",
+                gender="female",
+                department="Computer Science & Engineering",
+                email="teacher@tce.edu",
+                password_hash=auth.get_password_hash("password123")
+            )
+            db.add(test_teacher)
+            db.commit()
+            db.refresh(test_teacher)
+        elif not auth.verify_password("password123", test_teacher.password_hash):
+            test_teacher.password_hash = auth.get_password_hash("password123")
+            db.commit()
+
+        default_course = db.query(models.Course).first()
+
+        test_students_spec = [
+            ("26STU001", "Vikas (Visionary)", "visionary@student.tce.edu", "Visionaries", "average", "male"),
+            ("26STU002", "Pooja (Pioneer)", "pioneer@student.tce.edu", "Pioneers", "fast", "female"),
+            ("26STU003", "Mohan (Mentor)", "mentor@student.tce.edu", "Mentors", "slow", "male"),
+            ("26STU004", "Charan (Conqueror)", "conqueror@student.tce.edu", "Conquerors", "average", "male"),
+        ]
+
+        for regno, sname, semail, pt, cog, sgender in test_students_spec:
+            stu = db.query(models.Student).filter(models.Student.email == semail).first()
+            if not stu:
+                stu = models.Student(
+                    regno=regno,
+                    name=sname,
+                    email=semail,
+                    gender=sgender,
+                    department="Computer Science & Engineering",
+                    password_hash=auth.get_password_hash("password123"),
+                    form_submission=True,
+                    pt_ls=pt,
+                    ppt=pt,
+                    cognitive_level=cog,
+                    hearts=5,
+                    total_coins=100,
+                    total_keys=5
+                )
+                db.add(stu)
+                db.commit()
+                db.refresh(stu)
+            else:
+                if not auth.verify_password("password123", stu.password_hash):
+                    stu.password_hash = auth.get_password_hash("password123")
+                    db.commit()
+
+            if default_course:
+                enrolled = db.query(models.CourseEnrollment).filter(
+                    models.CourseEnrollment.student_id == stu.id,
+                    models.CourseEnrollment.course_id == default_course.id
+                ).first()
+                if not enrolled:
+                    db.add(models.CourseEnrollment(student_id=stu.id, course_id=default_course.id))
+                    db.commit()
     finally:
         db.close()
