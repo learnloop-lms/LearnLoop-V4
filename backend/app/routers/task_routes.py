@@ -415,6 +415,30 @@ def delete_task_challenge(
     db.commit()
     return {"message": "Task challenge deleted successfully", "id": task_id}
 
+def _normalize_pt(pt: str) -> str:
+    if not pt:
+        return ""
+    p = pt.strip().lower()
+    if p.startswith("vision"):
+        return "visionary"
+    if p.startswith("pioneer"):
+        return "pioneer"
+    if p.startswith("conquer"):
+        return "conqueror"
+    if p.startswith("mentor"):
+        return "mentor"
+    if p.startswith("universal"):
+        return "universal"
+    return p
+
+def _pt_matches(task_pt: str, student_pt: str) -> bool:
+    if not task_pt or not student_pt:
+        return False
+    return _normalize_pt(task_pt) == _normalize_pt(student_pt)
+
+def _is_universal(task_pt: str) -> bool:
+    return _normalize_pt(task_pt) == "universal"
+
 @router.get("/module/{module_id}")
 def get_adaptive_task_for_student(
     module_id: str,
@@ -448,20 +472,59 @@ def get_adaptive_task_for_student(
         curr_quiz_cognitive=coq
     ) # Basic, Intermediate, Advanced
 
-    # 3. Find matching task
-    tasks = db.query(models.TaskChallenge).filter(
-        models.TaskChallenge.module_id == module_id,
-        models.TaskChallenge.complexity_qlc == qlc.lower()
-    ).all()
+    # 3. Check if student already submitted a task for this module
+    existing_sub = db.query(models.TaskSubmission).join(
+        models.TaskChallenge, models.TaskSubmission.task_id == models.TaskChallenge.id
+    ).filter(
+        models.TaskSubmission.student_id == current_user.id,
+        models.TaskChallenge.module_id == module_id
+    ).order_by(models.TaskSubmission.submitted_at.desc()).first()
 
-    # Fallback to any task for this module if specific qlc pool is empty
-    if not tasks:
-        tasks = db.query(models.TaskChallenge).filter(models.TaskChallenge.module_id == module_id).all()
+    if existing_sub and existing_sub.task:
+        selected_task = existing_sub.task
+    else:
+        # 4. Find matching tasks for predicted complexity (qlc)
+        tasks = db.query(models.TaskChallenge).filter(
+            models.TaskChallenge.module_id == module_id,
+            models.TaskChallenge.complexity_qlc == qlc.lower()
+        ).all()
 
-    if not tasks:
-        raise HTTPException(status_code=404, detail="No task challenges available for this module yet.")
+        student_pt = (getattr(current_user, "pt_ls", None) or "").strip()
 
-    selected_task = tasks[0]
+        # Step 4a: Match student's learning archetype (target_pt_ls)
+        archetype_tasks = [t for t in tasks if _pt_matches(t.target_pt_ls, student_pt)]
+
+        selected_task = None
+        if archetype_tasks:
+            prog_tasks = [t for t in archetype_tasks if t.task_type == "programming"]
+            selected_task = prog_tasks[0] if prog_tasks else archetype_tasks[0]
+        else:
+            # Step 4b: Safe Fallback — falls back ONLY to Universal of the same complexity level
+            universal_tasks = [t for t in tasks if _is_universal(t.target_pt_ls)]
+            if universal_tasks:
+                prog_univ = [t for t in universal_tasks if t.task_type == "programming"]
+                selected_task = prog_univ[0] if prog_univ else universal_tasks[0]
+
+        # If neither archetype nor Universal exists in this complexity, check Universal across module (never other archetypes)
+        if not selected_task:
+            all_module_tasks = db.query(models.TaskChallenge).filter(
+                models.TaskChallenge.module_id == module_id
+            ).all()
+            arch_fallback = [t for t in all_module_tasks if _pt_matches(t.target_pt_ls, student_pt)]
+            if arch_fallback:
+                prog_fallback = [t for t in arch_fallback if t.task_type == "programming"]
+                selected_task = prog_fallback[0] if prog_fallback else arch_fallback[0]
+            else:
+                univ_fallback = [t for t in all_module_tasks if _is_universal(t.target_pt_ls)]
+                if univ_fallback:
+                    prog_univ_fallback = [t for t in univ_fallback if t.task_type == "programming"]
+                    selected_task = prog_univ_fallback[0] if prog_univ_fallback else univ_fallback[0]
+
+        if not selected_task:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No task challenges matching your learning archetype ({student_pt}) or Universal found for this module."
+            )
     course = module.course
     allowed_compilers = course.allowed_compilers if course else ["python", "c", "cpp", "java"]
 
@@ -612,30 +675,45 @@ def swap_task(
     usage_rec.swaps_used += 1
     usage_rec.last_swapped_at = datetime.utcnow()
 
-    # Find another task in the same module with equal complexity
+    # Find another task in the same module with equal complexity matching student's archetype or Universal
     alt_tasks = db.query(models.TaskChallenge).filter(
         models.TaskChallenge.module_id == req.module_id,
         models.TaskChallenge.complexity_qlc == curr_task.complexity_qlc,
         models.TaskChallenge.id != curr_task.id
     ).all()
 
-    if not alt_tasks:
-        # Fallback to any other task in the module
-        alt_tasks = db.query(models.TaskChallenge).filter(
+    student_pt = (getattr(current_user, "pt_ls", None) or "").strip()
+
+    # Strictly ONLY student's archetype OR Universal! Never questions of other archetypes!
+    valid_swap_tasks = [
+        t for t in alt_tasks
+        if _pt_matches(t.target_pt_ls, student_pt) or _is_universal(t.target_pt_ls)
+    ]
+
+    if not valid_swap_tasks:
+        # Check if there is another task of their archetype or Universal in this module
+        all_alt_tasks = db.query(models.TaskChallenge).filter(
             models.TaskChallenge.module_id == req.module_id,
             models.TaskChallenge.id != curr_task.id
         ).all()
+        valid_swap_tasks = [
+            t for t in all_alt_tasks
+            if _pt_matches(t.target_pt_ls, student_pt) or _is_universal(t.target_pt_ls)
+        ]
 
-    if not alt_tasks:
+    if not valid_swap_tasks:
         db.rollback()
         raise HTTPException(
             status_code=400,
-            detail="No alternative task challenge found in this module to swap with."
+            detail=f"No alternative task challenge matching your archetype ({student_pt}) or Universal found to swap with."
         )
 
-    # Pick the next task
-    import random
-    new_task = random.choice(alt_tasks)
+    # Prioritize swapping within their same archetype first
+    same_arch_swaps = [t for t in valid_swap_tasks if _pt_matches(t.target_pt_ls, student_pt)]
+    if same_arch_swaps:
+        new_task = random.choice(same_arch_swaps)
+    else:
+        new_task = random.choice(valid_swap_tasks)
     db.commit()
 
     return {
