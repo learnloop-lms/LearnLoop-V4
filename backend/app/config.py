@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     DOMAIN: str = os.getenv("DOMAIN", "")
     MODELS_DIR: str = os.path.join(BASE_DIR, "models")
     ASSETS_DIR: str = os.path.join(BASE_DIR, "assets")
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
     class Config:
         case_sensitive = True

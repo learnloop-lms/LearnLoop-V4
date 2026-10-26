@@ -1,6 +1,7 @@
 import io
 import csv
 import json
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
@@ -9,6 +10,11 @@ from app.database import get_db
 from app import models, schemas, auth
 from app.services.ai_engine import ai_engine
 from app.services.compiler import run_code
+from app.services.ai_answer_evaluator import (
+    evaluate_programming_submission,
+    evaluate_descriptive_submission,
+    pre_check_programming_code
+)
 from app.services.gamification import (
     calculate_reward_coins,
     check_streak_and_promotion
@@ -486,14 +492,306 @@ def execute_code(req: schemas.CodeRunRequest):
         error=res["error"]
     )
 
+@router.post("/pre-check")
+def pre_check_task_code(
+    req: schemas.TaskPreCheckRequest,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Pre-Submission Health Check & Diagnostics for Programming Tasks.
+    Rule: 1st check on a task is FREE.
+    Subsequent checks cost 25 coins.
+    """
+    if getattr(current_user, "current_role", "") != "student":
+        raise HTTPException(status_code=403, detail="Students only.")
+
+    task = db.query(models.TaskChallenge).filter(models.TaskChallenge.id == req.task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found.")
+
+    raw_tc = task.test_cases or []
+    if isinstance(raw_tc, str):
+        try:
+            test_cases = json.loads(raw_tc)
+        except Exception:
+            test_cases = []
+    else:
+        test_cases = raw_tc
+
+    # Check swap/precheck usage record for this student and module
+    usage_rec = db.query(models.TaskSwapUsage).filter(
+        models.TaskSwapUsage.student_id == current_user.id,
+        models.TaskSwapUsage.module_id == task.module_id
+    ).first()
+
+    if not usage_rec:
+        usage_rec = models.TaskSwapUsage(
+            student_id=current_user.id,
+            module_id=task.module_id,
+            swaps_used=0,
+            pre_checks_used=0
+        )
+        db.add(usage_rec)
+        db.flush()
+
+    coins_deducted = 0
+    if usage_rec.pre_checks_used == 0:
+        # 1st Check is FREE
+        coins_deducted = 0
+    else:
+        # Subsequent checks cost 25 coins
+        if (current_user.total_coins or 0) < 25:
+            raise HTTPException(
+                status_code=400,
+                detail="Subsequent pre-submission checks cost 25 coins. Insufficient balance."
+            )
+        current_user.total_coins = max(0, current_user.total_coins - 25)
+        coins_deducted = 25
+
+    usage_rec.pre_checks_used += 1
+    db.commit()
+
+    # Run light diagnostic
+    diag = pre_check_programming_code(
+        code=req.code,
+        language=req.programming_language or "python",
+        test_cases=test_cases,
+        problem_statement=task.problem_statement or ""
+    )
+
+    diag["coins_deducted"] = coins_deducted
+    diag["remaining_coins"] = current_user.total_coins
+    diag["check_number"] = usage_rec.pre_checks_used
+
+    return diag
+
+@router.post("/swap")
+def swap_task(
+    req: schemas.TaskSwapRequest,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Task Swap Lifeline:
+    Rule: 2 Free Swaps per module, then costs 1 Heart.
+    Swaps with another task of the exact same complexity level (basic/intermediate/advanced).
+    """
+    if getattr(current_user, "current_role", "") != "student":
+        raise HTTPException(status_code=403, detail="Students only.")
+
+    curr_task = db.query(models.TaskChallenge).filter(models.TaskChallenge.id == req.current_task_id).first()
+    if not curr_task:
+        raise HTTPException(status_code=404, detail="Current task not found.")
+
+    usage_rec = db.query(models.TaskSwapUsage).filter(
+        models.TaskSwapUsage.student_id == current_user.id,
+        models.TaskSwapUsage.module_id == req.module_id
+    ).first()
+
+    if not usage_rec:
+        usage_rec = models.TaskSwapUsage(
+            student_id=current_user.id,
+            module_id=req.module_id,
+            swaps_used=0,
+            pre_checks_used=0
+        )
+        db.add(usage_rec)
+        db.flush()
+
+    # Check cost
+    if usage_rec.swaps_used >= 2:
+        if (current_user.hearts or 0) < 1:
+            raise HTTPException(
+                status_code=400,
+                detail="You have used your 2 free swaps and do not have enough hearts to swap (costs 1 heart)."
+            )
+        current_user.hearts = max(0, current_user.hearts - 1)
+        current_user.last_heart_loss_at = datetime.utcnow()
+
+    usage_rec.swaps_used += 1
+    usage_rec.last_swapped_at = datetime.utcnow()
+
+    # Find another task in the same module with equal complexity
+    alt_tasks = db.query(models.TaskChallenge).filter(
+        models.TaskChallenge.module_id == req.module_id,
+        models.TaskChallenge.complexity_qlc == curr_task.complexity_qlc,
+        models.TaskChallenge.id != curr_task.id
+    ).all()
+
+    if not alt_tasks:
+        # Fallback to any other task in the module
+        alt_tasks = db.query(models.TaskChallenge).filter(
+            models.TaskChallenge.module_id == req.module_id,
+            models.TaskChallenge.id != curr_task.id
+        ).all()
+
+    if not alt_tasks:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="No alternative task challenge found in this module to swap with."
+        )
+
+    # Pick the next task
+    import random
+    new_task = random.choice(alt_tasks)
+    db.commit()
+
+    return {
+        "message": f"Task swapped successfully! (Swap #{usage_rec.swaps_used})",
+        "swaps_used": usage_rec.swaps_used,
+        "remaining_hearts": current_user.hearts,
+        "task_id": new_task.id,
+        "title": new_task.title,
+        "complexity_qlc": new_task.complexity_qlc,
+        "task_type": new_task.task_type,
+        "problem_statement": new_task.problem_statement,
+        "starter_code": new_task.starter_code,
+        "max_marks": new_task.max_marks
+    }
+
+@router.post("/expert-query")
+def raise_task_expert_query(
+    req: schemas.TaskExpertQueryCreate,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Student asks the Course Expert (Teacher) for guidance on their code/task.
+    The code snapshot and error trace are automatically bundled for teacher diagnosis.
+    """
+    if getattr(current_user, "current_role", "") != "student":
+        raise HTTPException(status_code=403, detail="Students only.")
+
+    q = models.TaskExpertQuery(
+        student_id=current_user.id,
+        task_id=req.task_id,
+        module_id=req.module_id,
+        heading=req.heading or "Question on Task",
+        query_text=req.query_text,
+        code_snapshot=req.code_snapshot,
+        compiler_output=req.compiler_output,
+        status="pending"
+    )
+    db.add(q)
+    db.commit()
+    db.refresh(q)
+
+    return {
+        "message": "Your question has been sent to the course expert with your code diagnostic snapshot.",
+        "query_id": q.id
+    }
+
+@router.get("/expert-queries/pending")
+def get_pending_expert_queries(
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Teacher view of pending student expert queries with code snapshot attached.
+    """
+    if getattr(current_user, "current_role", "") != "teacher":
+        raise HTTPException(status_code=403, detail="Teachers only.")
+
+    queries = db.query(models.TaskExpertQuery).filter(
+        models.TaskExpertQuery.status == "pending"
+    ).order_by(models.TaskExpertQuery.created_at.desc()).all()
+
+    res = []
+    for q in queries:
+        student = q.student
+        task = q.task
+        res.append({
+            "id": q.id,
+            "student_id": q.student_id,
+            "student_name": student.name if student else "Student",
+            "student_regno": getattr(student, "regno", ""),
+            "task_id": q.task_id,
+            "task_title": task.title if task else "",
+            "heading": q.heading,
+            "query_text": q.query_text,
+            "code_snapshot": q.code_snapshot,
+            "compiler_output": q.compiler_output,
+            "created_at": q.created_at
+        })
+    return res
+
+@router.post("/expert-queries/{query_id}/reply")
+def reply_task_expert_query(
+    query_id: str,
+    req: schemas.TaskExpertQueryReply,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    if getattr(current_user, "current_role", "") != "teacher":
+        raise HTTPException(status_code=403, detail="Teachers only.")
+
+    q = db.query(models.TaskExpertQuery).filter(models.TaskExpertQuery.id == query_id).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Query not found.")
+
+    q.teacher_reply = req.teacher_reply
+    q.teacher_id = current_user.id
+    q.status = "answered"
+    q.replied_at = datetime.utcnow()
+    db.commit()
+
+    return {"message": "Reply sent to student successfully."}
+
 @router.post("/submit")
 def submit_task(
     req: schemas.TaskSubmitRequest,
     current_user = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Task Submission with Instant Hybrid Neuro-Symbolic Autograding!
+    - Symbolic AI for Programming (AST, tiered test cases, quality, anti-hardcoding).
+    - Neural AI for Descriptive (Gemini Flash rubric evaluation with quoted evidence).
+    - Immediately triggers ANN Model 4, streak promotions, badges, and unlocks next module!
+    """
     if getattr(current_user, "current_role", "") != "student":
         raise HTTPException(status_code=403, detail="Students only.")
+
+    task = db.query(models.TaskChallenge).filter(models.TaskChallenge.id == req.task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task challenge not found.")
+
+    module = task.module
+    course = module.course if module else None
+
+    # Run Autograder
+    eval_res = {}
+    if task.task_type == "programming":
+        raw_tc = task.test_cases or []
+        if isinstance(raw_tc, str):
+            try:
+                test_cases = json.loads(raw_tc)
+            except Exception:
+                test_cases = []
+        else:
+            test_cases = raw_tc
+
+        eval_res = evaluate_programming_submission(
+            code=req.submitted_code or "",
+            language=req.programming_language or "python",
+            test_cases=test_cases,
+            problem_statement=task.problem_statement or "",
+            starter_code=task.starter_code or "",
+            max_marks=task.max_marks or 100
+        )
+    else:
+        # Descriptive / Open-ended
+        eval_res = evaluate_descriptive_submission(
+            text=req.submitted_text or "",
+            problem_statement=task.problem_statement or "",
+            max_marks=task.max_marks or 100
+        )
+
+    awarded_score = float(eval_res.get("score", 0.0))
+    explanation = eval_res.get("explanation", "Evaluation completed.")
+    confidence = eval_res.get("confidence", "high")
 
     sub = models.TaskSubmission(
         student_id=current_user.id,
@@ -501,27 +799,130 @@ def submit_task(
         programming_language=req.programming_language,
         submitted_code=req.submitted_code,
         submitted_text=req.submitted_text,
-        compiler_output=req.compiler_output
+        compiler_output=req.compiler_output,
+        mst_score=awarded_score,
+        teacher_feedback=explanation,
+        auto_eval_score=awarded_score,
+        auto_eval_explanation=explanation,
+        auto_eval_confidence=confidence,
+        auto_eval_details=json.dumps(eval_res),
+        is_calibrated=False,
+        evaluated_at=datetime.utcnow()
     )
     db.add(sub)
+    db.flush()
+
+    # Model 4: Cognitive Update Pipeline
+    leaderboard_level = "Stepper"
+    if module and course:
+        last_quiz = db.query(models.QuizSubmission).filter(
+            models.QuizSubmission.student_id == current_user.id,
+            models.QuizSubmission.module_id == module.id
+        ).order_by(models.QuizSubmission.submitted_at.desc()).first()
+
+        msq = last_quiz.msq_score if last_quiz else 0.0
+        mst = awarded_score
+
+        w1 = course.w1_quiz_weight if course else 0.5
+        w2 = course.w2_task_weight if course else 0.5
+        scaled_msq = msq * 10.0 if msq <= 10.0 else msq
+        tp = (w1 * scaled_msq) + (w2 * mst)
+
+        cmc = module.complexity_cmc or 1
+        raw_label, leaderboard_level = ai_engine.predict_cognitive_update(cmc, tp)
+
+        cog_backend_map = {"Fast Learner": "fast", "Medium Learner": "average", "Slow Learner": "slow"}
+        new_cog = cog_backend_map.get(raw_label, "average")
+
+        final_cog, new_streak = check_streak_and_promotion(
+            current_level=current_user.cognitive_level or "average",
+            new_level=new_cog,
+            current_streak=current_user.level_streak_count or 0
+        )
+        current_user.cognitive_level = final_cog
+        current_user.level_streak_count = new_streak
+
+        # Award Coins
+        reward_coins = calculate_reward_coins(leaderboard_level)
+        current_user.total_coins = (current_user.total_coins or 0) + reward_coins
+
+        # Award Badges
+        if current_user.pt_ls in ["Visionaries", "Mentors", "Conquerors"]:
+            badge_tier = "associate"
+            if task.complexity_qlc == "intermediate":
+                badge_tier = "professional"
+            elif task.complexity_qlc == "advanced":
+                badge_tier = "master"
+
+            theme_folder = (current_user.pt_ls or "visionaries").lower()
+            badge_icon_path = f"/assets/{theme_folder}/{theme_folder[:-3] if theme_folder.endswith('ies') else theme_folder[:-1]}_badge_{badge_tier}.png"
+
+            existing_badge = db.query(models.UserBadge).filter(
+                models.UserBadge.student_id == current_user.id,
+                models.UserBadge.concept_name == module.concept_name,
+                models.UserBadge.badge_tier == badge_tier
+            ).first()
+
+            if not existing_badge:
+                new_badge = models.UserBadge(
+                    student_id=current_user.id,
+                    theme_archetype=current_user.pt_ls,
+                    concept_name=module.concept_name,
+                    badge_tier=badge_tier,
+                    badge_icon_path=badge_icon_path
+                )
+                db.add(new_badge)
+
+        # Save State Record
+        state_rec = models.LearnerModuleState(
+            student_id=current_user.id,
+            module_id=module.id,
+            pmc=1,
+            cmc=cmc,
+            msq=msq,
+            mst=mst,
+            tp_total_performance=tp,
+            model4_output=raw_label,
+            leaderboard_level=leaderboard_level,
+            level_streak_count=new_streak,
+            reward_coins_earned=reward_coins
+        )
+        db.add(state_rec)
+
     db.commit()
     db.refresh(sub)
-    return {"message": "Task submitted successfully. Pending instructor evaluation.", "submission_id": sub.id}
+    db.refresh(current_user)
+
+    return {
+        "message": "Task evaluated automatically!",
+        "submission_id": sub.id,
+        "score": awarded_score,
+        "explanation": explanation,
+        "confidence": confidence,
+        "leaderboard_level": leaderboard_level,
+        "eval_details": eval_res
+    }
 
 @router.get("/pending-evaluations")
 def get_pending_task_evaluations(
     current_user = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Teacher Evaluation Queue:
+    Displays submissions with their auto-evaluated mark and evidence explanation,
+    allowing faculty to 1-click Confirm or Edit/Adjust marks.
+    """
     if getattr(current_user, "current_role", "") != "teacher":
         raise HTTPException(status_code=403, detail="Teachers only.")
 
-    # Get submissions where mst_score is None
     teacher_course_ids = [c.id for c in db.query(models.Course).filter(models.Course.teacher_id == current_user.id).all()]
-    query = db.query(models.TaskSubmission).filter(models.TaskSubmission.mst_score == None)
+    query = db.query(models.TaskSubmission)
     if teacher_course_ids:
         query = query.join(models.TaskChallenge).join(models.Module).filter(models.Module.course_id.in_(teacher_course_ids))
-    pending = query.order_by(models.TaskSubmission.submitted_at.desc()).all()
+
+    # Show uncalibrated first (most recent)
+    pending = query.order_by(models.TaskSubmission.is_calibrated.asc(), models.TaskSubmission.submitted_at.desc()).all()
 
     res = []
     for p in pending:
@@ -531,7 +932,8 @@ def get_pending_task_evaluations(
         course = module.course if module else None
         res.append({
             "submission_id": p.id,
-            "status": "pending",
+            "status": "graded",
+            "is_calibrated": bool(p.is_calibrated),
             "student_name": student.name if student else "Unknown",
             "student_regno": getattr(student, "regno", ""),
             "student_cognitive_level": getattr(student, "cognitive_level", "average"),
@@ -550,9 +952,58 @@ def get_pending_task_evaluations(
             "submitted_code": p.submitted_code,
             "submitted_text": p.submitted_text,
             "compiler_output": p.compiler_output,
+            "mst_score": p.mst_score,
+            "auto_eval_score": p.auto_eval_score,
+            "auto_eval_explanation": p.auto_eval_explanation,
+            "auto_eval_confidence": p.auto_eval_confidence,
+            "teacher_feedback": p.teacher_feedback,
             "submitted_at": p.submitted_at
         })
     return res
+
+@router.post("/submissions/{submission_id}/confirm")
+def confirm_auto_evaluation(
+    submission_id: str,
+    req: Optional[schemas.TaskEvaluationConfirmRequest] = None,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    RLHF Positive Reward Signal:
+    Faculty confirms that the AI autograded score was accurate.
+    Logs telemetry with score_delta = 0.0.
+    """
+    if getattr(current_user, "current_role", "") != "teacher":
+        raise HTTPException(status_code=403, detail="Teachers only.")
+
+    sub = db.query(models.TaskSubmission).filter(models.TaskSubmission.id == submission_id).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found.")
+
+    sub.is_calibrated = True
+    sub.evaluated_by = current_user.id
+    sub.evaluated_at = datetime.utcnow()
+    if req and req.teacher_notes:
+        sub.teacher_feedback = f"{sub.teacher_feedback or ''} [Faculty Note: {req.teacher_notes}]"
+
+    # Log to RLHF calibration telemetry
+    calib = models.EvaluationCalibrationLog(
+        submission_id=sub.id,
+        student_id=sub.student_id,
+        task_id=sub.task_id,
+        assessment_type=sub.task.task_type if sub.task else "programming",
+        auto_score=float(sub.auto_eval_score or sub.mst_score or 0.0),
+        faculty_score=float(sub.mst_score or 0.0),
+        score_delta=0.0,
+        confidence=sub.auto_eval_confidence,
+        auto_explanation=sub.auto_eval_explanation,
+        teacher_feedback="Confirmed by faculty",
+        teacher_id=current_user.id
+    )
+    db.add(calib)
+    db.commit()
+
+    return {"message": "Auto evaluation confirmed and logged for RL calibration.", "calibrated": True}
 
 @router.get("/submissions/all")
 def get_all_task_submissions(
@@ -622,10 +1073,29 @@ def grade_task_submission(
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found.")
 
+    orig_auto_score = sub.auto_eval_score if sub.auto_eval_score is not None else sub.mst_score
     sub.mst_score = req.mst_score
     sub.teacher_feedback = req.teacher_feedback
     sub.evaluated_by = current_user.id
     sub.evaluated_at = datetime.utcnow()
+    sub.is_calibrated = True
+
+    # RLHF calibration logging
+    delta = float(req.mst_score) - float(orig_auto_score or 0.0)
+    calib = models.EvaluationCalibrationLog(
+        submission_id=sub.id,
+        student_id=sub.student_id,
+        task_id=sub.task_id,
+        assessment_type=sub.task.task_type if sub.task else "programming",
+        auto_score=float(orig_auto_score or 0.0),
+        faculty_score=float(req.mst_score),
+        score_delta=delta,
+        confidence=sub.auto_eval_confidence,
+        auto_explanation=sub.auto_eval_explanation,
+        teacher_feedback=req.teacher_feedback,
+        teacher_id=current_user.id
+    )
+    db.add(calib)
 
     student = sub.student
     task = sub.task

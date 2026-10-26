@@ -7,7 +7,7 @@ import { useVisionaryFeedback } from '../context/VisionaryFeedbackContext';
 import { 
   ArrowLeft, BookOpen, CheckCircle, Clock, Zap, 
   HelpCircle, Code2, Lock, ChevronDown, ChevronUp, MessageSquare, Plus, Award, ExternalLink,
-  Check, AlertCircle, ArrowRight, Sparkles, Trophy, Eye, X, XCircle
+  Check, AlertCircle, ArrowRight, Sparkles, Trophy, Eye, X, XCircle, Download
 } from 'lucide-react';
 
 export default function CourseView() {
@@ -232,6 +232,26 @@ export default function CourseView() {
       alert(err.response?.data?.detail || 'Failed to submit revaluation request.');
     } finally {
       setSubmittingReval(false);
+    }
+  };
+
+  const handleDownloadModulePDF = async (targetModId, type = 'all') => {
+    const modId = targetModId || activeModuleId;
+    if (!modId) return;
+    try {
+      const res = await axios.get(`${API_BASE}/courses/modules/${modId}/summary-pdf?type=${type}`, {
+        responseType: 'blob'
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      const fileSuffix = type === 'quiz' ? 'Quiz_Report' : type === 'task' ? 'Task_Solution_Report' : 'Complete_Assessment_Report';
+      link.setAttribute('download', `LearnLoop_Module_${fileSuffix}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      alert(`Failed to generate ${type} PDF report. Please ensure the assessment has been submitted.`);
     }
   };
 
@@ -880,6 +900,14 @@ export default function CourseView() {
                             <Eye className="w-4 h-4" />
                             Review Questions & Answers
                           </button>
+                          <button
+                            onClick={() => handleDownloadModulePDF(activeModule.id, 'quiz')}
+                            className="px-4 py-2.5 rounded-xl bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-700 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
+                            title="Download Quiz Report with Reg No Watermark"
+                          >
+                            <Download className="w-4 h-4" />
+                            Download Quiz PDF
+                          </button>
                         </div>
                       </div>
                     ) : (
@@ -1015,11 +1043,32 @@ export default function CourseView() {
                                   <Code2 className="w-3 h-3 text-emerald-400" />
                                   Your Submitted Solution {progress.programming_language ? `(${progress.programming_language})` : ''}
                                 </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownloadModulePDF(activeModuleId, 'task')}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold transition cursor-pointer"
+                                  title="Download Task Solution PDF with Watermark"
+                                >
+                                  <Download className="w-3 h-3" />
+                                  Download Task PDF
+                                </button>
                               </div>
                               <pre className="text-xs font-mono overflow-x-auto max-h-48 leading-relaxed text-emerald-300">
                                 {progress.submitted_code || progress.submitted_text}
                               </pre>
                             </div>
+                          )}
+
+                          {/* DOWNLOAD SUMMARY PDF BUTTON */}
+                          {(progress.task_submitted || progress.submitted_code || progress.submitted_text) && (
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadModulePDF(activeModuleId, 'all')}
+                              className="w-full mt-3 py-2.5 px-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-indigo-500/20 transition cursor-pointer"
+                            >
+                              <Download className="w-4 h-4" />
+                              Download Complete Assessment Report (Quiz + Task PDF)
+                            </button>
                           )}
 
                           {/* Revaluation Status Banner */}
@@ -1550,12 +1599,23 @@ export default function CourseView() {
                   Module {activeModule?.module_no}: {activeModule?.concept_name}
                 </h3>
               </div>
-              <button
-                onClick={() => { setShowQuizReviewModal(false); setQuizReviewData(null); setQuizRevalMsg(''); }}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadModulePDF(activeModuleId, 'quiz')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-sm transition cursor-pointer"
+                  title="Download Quiz Report with Reg No Watermark"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Quiz PDF</span>
+                </button>
+                <button
+                  onClick={() => { setShowQuizReviewModal(false); setQuizReviewData(null); setQuizRevalMsg(''); }}
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Content (Scrollable) */}

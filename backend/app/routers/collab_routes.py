@@ -22,6 +22,7 @@ from app.collab_models import (
     CollabTeamCounter
 )
 from app.services.compiler import run_code
+from app.services.ai_answer_evaluator import verify_code_requirements_symbolic
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/collab", tags=["Collaborative Challenges"])
@@ -1204,7 +1205,12 @@ def get_team_workspace(
             "review_status": workspace.review_status if workspace else "PENDING",
             "tests_passed_ratio": workspace.tests_passed_ratio if workspace else 0.0,
             "compiler_output": workspace.compiler_output if workspace else "",
-            "custom_stdin": workspace.custom_stdin if workspace else ""
+            "custom_stdin": workspace.custom_stdin if workspace else "",
+            "symbolic_audit": verify_code_requirements_symbolic(
+                workspace.code_content if workspace else "",
+                workspace.code_language if workspace else "python",
+                challenge.statement if challenge else ""
+            )
         },
         "comments": comments_data,
         "messages": messages_data
@@ -1303,11 +1309,26 @@ def perform_role_action(
     elif action == "Approve":
         if role != "Mentor" and not member.is_leader:
             raise HTTPException(status_code=403, detail="Only the Mentor can approve the draft.")
+        
+        # 100% Free Symbolic AST Automated Verification (0 API Calls)
+        audit = verify_code_requirements_symbolic(
+            workspace.code_content or "",
+            workspace.code_language or "python",
+            team.challenge.statement if (team and team.challenge) else ""
+        )
+        if not audit["is_valid"] and not details.get("force_approve", False):
+            return {
+                "status": "warning",
+                "message": "Automated Verification Notice: The code passes test cases, but does not implement required constructs: " + " ".join(audit["warnings"]),
+                "warnings": audit["warnings"],
+                "can_force_approve": True
+            }
+
         workspace.mentor_approved = True
         workspace.review_status = "APPROVED"
         member.role_performance_score = min(1.0, member.role_performance_score + 0.5)
         db.commit()
-        return {"message": "Draft approved by Mentor!"}
+        return {"status": "success", "message": "Draft approved by Mentor!"}
 
     elif action == "RequestChanges":
         if role != "Mentor" and not member.is_leader:

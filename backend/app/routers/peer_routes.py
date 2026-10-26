@@ -26,6 +26,7 @@ def raise_peer_query(
     query = models.PeerQuery(
         student_id=current_user.id,
         module_id=req.module_id,
+        heading=req.heading or "Question on Concept",
         query_text=req.query_text,
         status="open"
     )
@@ -60,6 +61,7 @@ def get_module_queries(module_id: str, db: Session = Depends(get_db)):
             "query_id": q.id,
             "inquirer_id": q.student_id,
             "inquirer_name": inquirer.name if inquirer else "Student",
+            "heading": getattr(q, "heading", "") or "Question on Concept",
             "query_text": q.query_text,
             "status": q.status,
             "created_at": q.created_at,

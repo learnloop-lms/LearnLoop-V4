@@ -18,8 +18,28 @@ from app.routers import (
 )
 from app import models, collab_models, auth
 
-# Initialize DB tables
+from sqlalchemy import text
+
+# Initialize DB tables and idempotent column additions
 Base.metadata.create_all(bind=engine)
+try:
+    with engine.connect() as conn:
+        for stmt in [
+            "ALTER TABLE task_submissions ADD COLUMN auto_eval_score FLOAT",
+            "ALTER TABLE task_submissions ADD COLUMN auto_eval_explanation TEXT",
+            "ALTER TABLE task_submissions ADD COLUMN auto_eval_confidence VARCHAR(20)",
+            "ALTER TABLE task_submissions ADD COLUMN auto_eval_details TEXT",
+            "ALTER TABLE task_submissions ADD COLUMN is_calibrated BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE task_submissions ADD COLUMN pre_check_count INTEGER DEFAULT 0",
+            "ALTER TABLE peer_queries ADD COLUMN heading VARCHAR(255)"
+        ]:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass
+except Exception:
+    pass
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

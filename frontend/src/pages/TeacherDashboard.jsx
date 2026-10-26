@@ -220,6 +220,17 @@ export default function TeacherDashboard() {
     }
   };
 
+  const handleConfirmAutoGrade = async (submissionId) => {
+    try {
+      await axios.post(`${API_BASE}/tasks/submissions/${submissionId}/confirm`);
+      alert('Confirmed auto-evaluated mark! Recorded positive calibration telemetry for research.');
+      fetchPendingTasks();
+      fetchAllSubmissions();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to confirm mark.');
+    }
+  };
+
   const handleResolveRevaluation = async (revalId) => {
     const score = revalScore[revalId];
     const notes = revalNotes[revalId] || 'Reviewed and updated by instructor.';
@@ -786,6 +797,47 @@ export default function TeacherDashboard() {
 
                       {/* GRADING & FEEDBACK SECTION */}
                       <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                        {/* HYBRID NEURO-SYMBOLIC AUTOGRADER CARD */}
+                        {(sub.auto_eval_score !== undefined && sub.auto_eval_score !== null) && (
+                          <div className={`p-4 rounded-2xl border text-xs space-y-2 mb-3 ${
+                            isLight ? 'bg-indigo-50/80 border-indigo-200 text-slate-800' : 'bg-indigo-950/40 border-indigo-800 text-indigo-200'
+                          }`}>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <Sparkles className="w-4 h-4 text-indigo-500" />
+                                <span className="font-extrabold text-indigo-700 dark:text-indigo-300">
+                                  Hybrid Neuro-Symbolic Autograder:
+                                </span>
+                                <span className="px-2.5 py-0.5 rounded-full bg-indigo-600 text-white font-black text-xs">
+                                  Suggested {sub.auto_eval_score} / {sub.max_marks}
+                                </span>
+                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
+                                  sub.auto_eval_confidence === 'high'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300'
+                                    : 'bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950 dark:text-amber-300'
+                                }`}>
+                                  Confidence: {sub.auto_eval_confidence || 'high'}
+                                </span>
+                              </div>
+
+                              {!sub.is_calibrated && (
+                                <button
+                                  onClick={() => handleConfirmAutoGrade(sub.submission_id)}
+                                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-xs cursor-pointer transition"
+                                  title="Confirm AI suggested mark (RLHF calibration audit)"
+                                >
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                  Confirm Mark (RLHF Audit)
+                                </button>
+                              )}
+                            </div>
+
+                            <p className="text-[11px] leading-relaxed opacity-90">
+                              <strong>Autograder Evidence & Feedback:</strong> {sub.auto_eval_explanation || sub.teacher_feedback || 'Deterministic concept and test case verification.'}
+                            </p>
+                          </div>
+                        )}
+
                         {isGraded && !isEditing ? (
                           <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800">
                             <div className="space-y-1">

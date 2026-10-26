@@ -287,6 +287,12 @@ export default function CollaborativeGameZone() {
         action_type: actionType,
         details
       });
+      if (res.data?.status === 'warning' && res.data?.can_force_approve) {
+        if (window.confirm(`${res.data.message}\n\nDo you still wish to approve this draft anyway?`)) {
+          await handleAction(actionType, { ...details, force_approve: true });
+        }
+        return;
+      }
       if (isSilent) {
         setSyncStatus('saved');
       } else {

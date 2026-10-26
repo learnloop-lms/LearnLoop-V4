@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas, auth
+from app.services.pdf_generator import generate_module_summary_pdf
 
 router = APIRouter(prefix="/courses", tags=["Courses & Modules"])
 
@@ -453,4 +455,72 @@ def get_student_course_completion_summary(
         })
 
     return res
+
+@router.get("/modules/{module_id}/summary-pdf")
+def download_module_summary_pdf(
+    module_id: str,
+    type: str = "all",
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    On-the-fly streaming PDF download of student's completed Quiz and/or Task submissions.
+    Supports ?type=quiz, ?type=task, or ?type=all.
+    Watermarked dynamically with student registration number.
+    Does NOT store any file to server disk.
+    """
+    if getattr(current_user, "current_role", "") != "student":
+        raise HTTPException(status_code=403, detail="Students only.")
+
+    module = db.query(models.Module).filter(models.Module.id == module_id).first()
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found.")
+
+    course = module.course
+    report_type = type.lower() if type else "all"
+
+    # 1. Fetch latest Quiz submission
+    quiz_sub = db.query(models.QuizSubmission).filter(
+        models.QuizSubmission.student_id == current_user.id,
+        models.QuizSubmission.module_id == module_id
+    ).order_by(models.QuizSubmission.submitted_at.desc()).first()
+
+    # 2. Fetch latest Task submission
+    task_ids = [t.id for t in module.task_challenges]
+    task_sub = db.query(models.TaskSubmission).filter(
+        models.TaskSubmission.student_id == current_user.id,
+        models.TaskSubmission.task_id.in_(task_ids)
+    ).order_by(models.TaskSubmission.submitted_at.desc()).first() if task_ids else None
+
+    # 3. Quiz questions map
+    quiz_questions = db.query(models.QuizQuestion).filter(models.QuizQuestion.module_id == module_id).all()
+    q_map = {q.id: q for q in quiz_questions}
+
+    # 4. Task challenge
+    task_challenge = task_sub.task if task_sub else None
+
+    # 5. Generate PDF in-memory
+    pdf_buffer = generate_module_summary_pdf(
+        student=current_user,
+        course=course,
+        module=module,
+        quiz_sub=quiz_sub,
+        task_sub=task_sub,
+        quiz_questions_map=q_map,
+        task_challenge=task_challenge,
+        report_type=report_type
+    )
+
+    reg_clean = getattr(current_user, "regno", "student") or "student"
+    suffix = "Quiz_Report" if report_type == "quiz" else "Task_Report" if report_type == "task" else "Complete_Report"
+    filename = f"LearnLoop_{reg_clean}_Module_{module.module_no}_{suffix}.pdf"
+
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
 

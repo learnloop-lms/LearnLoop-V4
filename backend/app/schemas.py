@@ -317,6 +317,29 @@ class TaskSubmitRequest(BaseModel):
     submitted_text: Optional[str] = None
     compiler_output: Optional[str] = None
 
+class TaskPreCheckRequest(BaseModel):
+    task_id: str
+    programming_language: Optional[str] = "python"
+    code: str
+
+class TaskSwapRequest(BaseModel):
+    module_id: str
+    current_task_id: str
+
+class TaskExpertQueryCreate(BaseModel):
+    task_id: str
+    module_id: str
+    heading: Optional[str] = "Question on Task"
+    query_text: str
+    code_snapshot: Optional[str] = ""
+    compiler_output: Optional[str] = ""
+
+class TaskExpertQueryReply(BaseModel):
+    teacher_reply: str
+
+class TaskEvaluationConfirmRequest(BaseModel):
+    teacher_notes: Optional[str] = None
+
 class TaskGradeRequest(BaseModel):
     mst_score: float
     teacher_feedback: Optional[str] = None
@@ -360,6 +383,7 @@ class RevaluationResolveRequest(BaseModel):
 # -----------------------------------------------------------------------------
 class PeerQueryCreate(BaseModel):
     module_id: str
+    heading: Optional[str] = None
     query_text: str
 
 class PeerAnswerCreate(BaseModel):

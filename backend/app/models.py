@@ -195,6 +195,14 @@ class TaskSubmission(Base):
     evaluated_at = Column(DateTime, nullable=True)
     submitted_at = Column(DateTime, default=datetime.utcnow)
 
+    # Hybrid Neuro-Symbolic Autograding fields
+    auto_eval_score = Column(Float, nullable=True)
+    auto_eval_explanation = Column(Text, nullable=True)
+    auto_eval_confidence = Column(String(20), default="high") # high, medium, borderline
+    auto_eval_details = Column(Text, nullable=True) # JSON test breakdown / rubric details
+    is_calibrated = Column(Boolean, default=False)
+    pre_check_count = Column(Integer, default=0)
+
     student = relationship("Student", back_populates="task_submissions")
     task = relationship("TaskChallenge")
 
@@ -259,6 +267,7 @@ class PeerQuery(Base):
     id = Column(String(36), primary_key=True, default=generate_uuid)
     student_id = Column(String(36), ForeignKey("students.id"), nullable=False)
     module_id = Column(String(36), ForeignKey("modules.id"), nullable=False)
+    heading = Column(String(255), nullable=True)
     query_text = Column(Text, nullable=False)
     status = Column(String(20), default="open") # open, answered, acknowledged
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -275,3 +284,52 @@ class PeerAnswer(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     query = relationship("PeerQuery", back_populates="answers")
+
+class TaskSwapUsage(Base):
+    __tablename__ = "task_swap_usages"
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    student_id = Column(String(36), ForeignKey("students.id"), nullable=False)
+    module_id = Column(String(36), ForeignKey("modules.id"), nullable=False)
+    swaps_used = Column(Integer, default=0)
+    pre_checks_used = Column(Integer, default=0)
+    last_swapped_at = Column(DateTime, default=datetime.utcnow)
+
+class TaskExpertQuery(Base):
+    __tablename__ = "task_expert_queries"
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    student_id = Column(String(36), ForeignKey("students.id"), nullable=False)
+    task_id = Column(String(36), ForeignKey("task_challenges.id"), nullable=False)
+    module_id = Column(String(36), ForeignKey("modules.id"), nullable=False)
+    heading = Column(String(255), nullable=True)
+    query_text = Column(Text, nullable=False)
+    code_snapshot = Column(Text, nullable=True)
+    compiler_output = Column(Text, nullable=True)
+    status = Column(String(20), default="pending") # pending, answered
+    teacher_reply = Column(Text, nullable=True)
+    teacher_id = Column(String(36), ForeignKey("teachers.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    replied_at = Column(DateTime, nullable=True)
+
+    student = relationship("Student")
+    task = relationship("TaskChallenge")
+
+class EvaluationCalibrationLog(Base):
+    """
+    RLHF Calibration Telemetry for PhD Research:
+    Logs every time faculty confirms or alters an autograded score.
+    Used for Reinforcement-Calibrated Expert Rule Weighting.
+    """
+    __tablename__ = "evaluation_calibration_logs"
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    submission_id = Column(String(36), nullable=False)
+    student_id = Column(String(36), ForeignKey("students.id"), nullable=False)
+    task_id = Column(String(36), ForeignKey("task_challenges.id"), nullable=False)
+    assessment_type = Column(String(20), default="programming") # programming, descriptive
+    auto_score = Column(Float, nullable=False)
+    faculty_score = Column(Float, nullable=False)
+    score_delta = Column(Float, nullable=False) # faculty_score - auto_score
+    confidence = Column(String(20), nullable=True)
+    auto_explanation = Column(Text, nullable=True)
+    teacher_feedback = Column(Text, nullable=True)
+    teacher_id = Column(String(36), ForeignKey("teachers.id"), nullable=True)
+    calibrated_at = Column(DateTime, default=datetime.utcnow)
