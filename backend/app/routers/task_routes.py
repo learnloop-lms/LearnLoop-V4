@@ -763,31 +763,42 @@ def submit_task(
 
     # Run Autograder
     eval_res = {}
-    if task.task_type == "programming":
-        raw_tc = task.test_cases or []
-        if isinstance(raw_tc, str):
-            try:
-                test_cases = json.loads(raw_tc)
-            except Exception:
+    try:
+        if task.task_type == "programming":
+            raw_tc = task.test_cases or []
+            if isinstance(raw_tc, str):
+                try:
+                    test_cases = json.loads(raw_tc)
+                except Exception:
+                    test_cases = []
+            elif isinstance(raw_tc, list):
+                test_cases = raw_tc
+            else:
                 test_cases = []
-        else:
-            test_cases = raw_tc
 
-        eval_res = evaluate_programming_submission(
-            code=req.submitted_code or "",
-            language=req.programming_language or "python",
-            test_cases=test_cases,
-            problem_statement=task.problem_statement or "",
-            starter_code=task.starter_code or "",
-            max_marks=task.max_marks or 100
-        )
-    else:
-        # Descriptive / Open-ended
-        eval_res = evaluate_descriptive_submission(
-            text=req.submitted_text or "",
-            problem_statement=task.problem_statement or "",
-            max_marks=task.max_marks or 100
-        )
+            eval_res = evaluate_programming_submission(
+                code=req.submitted_code or "",
+                language=req.programming_language or "python",
+                test_cases=test_cases,
+                problem_statement=task.problem_statement or "",
+                starter_code=task.starter_code or "",
+                max_marks=task.max_marks or 100
+            )
+        else:
+            # Descriptive / Open-ended
+            eval_res = evaluate_descriptive_submission(
+                text=req.submitted_text or "",
+                problem_statement=task.problem_statement or "",
+                max_marks=task.max_marks or 100
+            )
+    except Exception as e:
+        print(f"[Autograder Error] Failed during auto-evaluation: {e}")
+        # Safe fallback: Award base credit and queue for teacher review rather than failing the student's submission
+        eval_res = {
+            "score": round((task.max_marks or 100) * 0.5, 1),
+            "explanation": f"Submission successfully recorded. Queued for instructor evaluation.",
+            "confidence": "manual_review"
+        }
 
     awarded_score = float(eval_res.get("score", 0.0))
     explanation = eval_res.get("explanation", "Evaluation completed.")

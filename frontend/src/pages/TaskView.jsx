@@ -113,8 +113,11 @@ export default function TaskView() {
       if (res.data.allowed_compilers && res.data.allowed_compilers.length > 0) {
         const defaultLang = res.data.allowed_compilers.includes('python') ? 'python' : res.data.allowed_compilers[0];
         setSelectedLanguage(defaultLang);
-        if (res.data.starter_code && res.data.starter_code[defaultLang]) {
-          setCode(res.data.starter_code[defaultLang]);
+        if (res.data.starter_code) {
+          const starter = typeof res.data.starter_code === 'string'
+            ? res.data.starter_code
+            : (res.data.starter_code[defaultLang] || res.data.starter_code.default || '');
+          if (starter) setCode(starter);
         }
       }
     } catch (err) {
@@ -125,8 +128,11 @@ export default function TaskView() {
 
   const handleLanguageChange = (lang) => {
     setSelectedLanguage(lang);
-    if (taskData?.starter_code && taskData.starter_code[lang]) {
-      setCode(taskData.starter_code[lang]);
+    if (taskData?.starter_code) {
+      const starter = typeof taskData.starter_code === 'string'
+        ? taskData.starter_code
+        : (taskData.starter_code[lang] || taskData.starter_code.default || '');
+      setCode(starter);
     } else {
       setCode('');
     }
@@ -208,7 +214,8 @@ export default function TaskView() {
       setShowEvalResultModal(true);
       triggerFeedback('progress_forward', { course: taskData?.title });
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to submit task.');
+      console.error('Task submission error:', err);
+      alert(err.response?.data?.detail || err.message || 'Failed to submit task.');
     } finally {
       setSubmitting(false);
     }

@@ -106,7 +106,7 @@ def _extract_ast_concepts(code: str, language: str) -> Dict[str, Any]:
             concepts.add("condition")
         if re.search(r'\b(try|catch|except|throw|throws)\b', code):
             concepts.add("error_handling")
-        if re.search(r'\b(int|float|char|double|var|let)\s+[a-zA-Z0-9_]+\[', code) or '[' in code:
+        if re.search(r'\b(struct|union|class)\b', code) or re.search(r'\b(int|float|char|double|var|let)\s+[a-zA-Z0-9_]+\[', code) or '[' in code:
             concepts.add("data_structure")
         if re.search(r'\b(def|void|int|float|double|char|public|private|function)\s+([a-zA-Z0-9_]+)\s*\(', code):
             concepts.add("function")
@@ -276,14 +276,25 @@ def evaluate_programming_submission(
     language: str,
     test_cases: List[Dict[str, Any]],
     problem_statement: str,
-    starter_code: str = "",
+    starter_code: Any = "",
     max_marks: int = 100
 ) -> Dict[str, Any]:
     """
     Complete Symbolic AI Autograding Pipeline for Programming Tasks (Algorithm Part A).
     """
-    clean_code = code.strip()
-    clean_starter = (starter_code or "").strip()
+    clean_code = (code or "").strip()
+
+    clean_starter = ""
+    if isinstance(starter_code, dict):
+        clean_starter = starter_code.get((language or "").lower()) or starter_code.get("default")
+        if not clean_starter:
+            for v in starter_code.values():
+                if isinstance(v, str):
+                    clean_starter = v
+                    break
+    elif isinstance(starter_code, str):
+        clean_starter = starter_code
+    clean_starter = (clean_starter or "").strip()
 
     # Rule A3: Blank or unchanged starter code -> 0 marks
     if not clean_code or clean_code == clean_starter:
@@ -292,7 +303,7 @@ def evaluate_programming_submission(
             "max_marks": max_marks,
             "confidence": "high",
             "passed_tests": 0,
-            "total_tests": len(test_cases),
+            "total_tests": len(test_cases) if isinstance(test_cases, list) else 0,
             "explanation": "No original code submitted or starter template was left unchanged. Awarded 0 marks.",
             "test_results": [],
             "concepts_found": []
@@ -303,7 +314,8 @@ def evaluate_programming_submission(
     concepts = facts["concepts"]
 
     # Extract expected outputs for hard-coding check
-    expected_outputs = [str(tc.get("expected_output", "")).strip() for tc in test_cases if tc.get("expected_output")]
+    safe_test_cases = test_cases if isinstance(test_cases, list) else []
+    expected_outputs = [str(tc.get("expected_output", "")).strip() for tc in safe_test_cases if isinstance(tc, dict) and tc.get("expected_output")]
     is_hardcoded, hardcode_reason = _check_hardcoding(clean_code, expected_outputs)
 
     # Compile and run test cases
@@ -313,7 +325,9 @@ def evaluate_programming_submission(
     total_weight = 0.0
     first_error = ""
 
-    for i, tc in enumerate(test_cases):
+    for i, tc in enumerate(safe_test_cases):
+        if not isinstance(tc, dict):
+            continue
         inp = str(tc.get("input", ""))
         exp = str(tc.get("expected_output", "")).strip()
         is_hidden = bool(tc.get("is_hidden", False))
@@ -340,8 +354,17 @@ def evaluate_programming_submission(
             "detail": "Passed" if matched else (match_detail if not is_hidden else "Output did not match expected result")
         })
 
+    # If no test cases defined, run code once to verify execution
+    if not safe_test_cases:
+        res = run_code(language=language, code=clean_code, stdin_input="")
+        if res.get("success"):
+            passed_count = 1
+            weighted_passed = 1.0
+        elif not first_error:
+            first_error = (res.get("error") or "").splitlines()[0] if res.get("error") else "Execution error"
+
     # Marks Ladder (Algorithm Section A8 out of 10)
-    total_tests = len(test_cases) if test_cases else 1
+    total_tests = len(safe_test_cases) if safe_test_cases else 1
     total_weight = max(1.0, total_weight)
     pass_ratio = weighted_passed / total_weight
 
