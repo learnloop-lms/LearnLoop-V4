@@ -782,6 +782,7 @@ def submit_task(
                 test_cases=test_cases,
                 problem_statement=task.problem_statement or "",
                 starter_code=task.starter_code or "",
+                compiler_output=req.compiler_output or "",
                 max_marks=task.max_marks or 100
             )
         else:

@@ -119,6 +119,28 @@ def emulate_c_execution(c_code: str, stdin_input: str = "") -> dict:
             "error": f"C Sandbox Execution Error: {str(e)}"
         }
 
+def _find_c_compiler(binary_name: str = "gcc") -> str:
+    """Finds native GCC/G++ executable across WinLibs package directories and system PATH."""
+    local_appdata = os.environ.get("LOCALAPPDATA", "")
+    if local_appdata:
+        # Check WinGet Packages (where GCC and its DLLs reside)
+        packages_dir = os.path.join(local_appdata, "Microsoft", "WinGet", "Packages")
+        if os.path.exists(packages_dir):
+            for root, dirs, files in os.walk(packages_dir):
+                if root.endswith("bin") and f"{binary_name}.exe" in files:
+                    return os.path.join(root, f"{binary_name}.exe")
+
+    found = shutil.which(binary_name)
+    if found and not found.endswith(r"WinGet\Links\gcc.exe"):
+        return found
+
+    for p in [r"C:\mingw64\bin", r"C:\msys64\mingw64\bin", r"C:\tools\gcc\bin", r"C:\w64devkit\bin"]:
+        candidate = os.path.join(p, f"{binary_name}.exe")
+        if os.path.exists(candidate):
+            return candidate
+
+    return ""
+
 def run_code(language: str, code: str, stdin_input: str = "") -> dict:
     """
     Executes student submitted code in a temporary directory with timeout protection.
@@ -173,8 +195,9 @@ def run_code(language: str, code: str, stdin_input: str = "") -> dict:
                 }
 
             elif lang in ["c", "cpp"]:
-                compiler = "gcc" if lang == "c" else "g++"
-                if not shutil.which(compiler):
+                binary_name = "gcc" if lang == "c" else "g++"
+                compiler = _find_c_compiler(binary_name)
+                if not compiler:
                     # Native GCC/G++ not detected on host, execute via sandbox C emulator
                     return emulate_c_execution(code, stdin_input)
 

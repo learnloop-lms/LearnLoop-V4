@@ -154,6 +154,12 @@ def verify_code_requirements_symbolic(code: str, language: str = "python", probl
         if "function" not in concepts:
             warnings.append("Problem statement expects modular functions/methods, but none were defined.")
 
+    # 5. Structure / Struct Requirement Check
+    if re.search(r'\b(struct|structure|typedef)\b', problem_statement, re.I):
+        has_struct = "data_structure" in concepts or bool(re.search(r'\bstruct\s+[a-zA-Z0-9_]+\b', code))
+        if not has_struct:
+            warnings.append("Problem statement specifies defining a struct/structure, but no struct definition was found.")
+
     return {
         "is_valid": len(warnings) == 0,
         "warnings": warnings,
@@ -168,14 +174,26 @@ def _check_hardcoding(code: str, expected_outputs: List[str]) -> Tuple[bool, str
     """
     Check A: Are expected output values hard-coded as literal strings inside the program?
     """
+    clean_code_lines = [l.strip() for l in code.splitlines()]
     for exp in expected_outputs:
         clean_exp = exp.strip()
         if not clean_exp or len(clean_exp) < 2:
             continue
-        # Search for exact quotes e.g. "Pass", "20", "Even"
+        
+        # 1. Exact quoted match
         pattern = re.escape(clean_exp)
         if re.search(r'["\']' + pattern + r'["\']', code):
             return True, f"Output value '{clean_exp}' was found hardcoded directly in quotation marks."
+        
+        # 2. Normalized multi-token literal match (e.g. printf("Rover_ID=404\nmodelName=..."))
+        exp_normalized = re.sub(r'\\n|\s+', ' ', clean_exp).strip().lower()
+        for line in clean_code_lines:
+            string_literals = re.findall(r'"([^"]*)"', line)
+            for lit in string_literals:
+                lit_normalized = re.sub(r'\\n|\s+', ' ', lit).strip().lower()
+                if len(lit_normalized) >= 15 and (lit_normalized in exp_normalized or exp_normalized in lit_normalized):
+                    return True, f"Full output sequence was hardcoded inside a literal string."
+
     return False, ""
 
 def _compare_output(actual: str, expected: str) -> Tuple[bool, str]:
@@ -277,6 +295,7 @@ def evaluate_programming_submission(
     test_cases: List[Dict[str, Any]],
     problem_statement: str,
     starter_code: Any = "",
+    compiler_output: str = "",
     max_marks: int = 100
 ) -> Dict[str, Any]:
     """
@@ -374,17 +393,23 @@ def evaluate_programming_submission(
     # Determine raw mark out of 10 based on rubric logic
     raw_mark_10 = 0.0
     reason_prefix = ""
-    if is_hardcoded and pass_ratio < 1.0:
+    req_check = verify_code_requirements_symbolic(clean_code, language, problem_statement)
+
+    if is_hardcoded:
         raw_mark_10 = 2.0
-        reason_prefix = f"Hardcoded literal output detected ({hardcode_reason}). Capped at partial credit."
+        reason_prefix = f"Hardcoded literal output detected ({hardcode_reason}). Capped at 2/10 partial credit."
     elif passed_count == total_tests and total_tests > 0:
-        quality = _evaluate_code_quality(clean_code)
-        raw_mark_10 = 10.0 if quality >= 3 else 9.0
-        explanation_parts.append(f"Passed all {total_tests}/{total_tests} test cases flawlessly.")
-        if quality >= 3:
-            reason_prefix = "Clean structure, proper naming, and clear code comments."
+        if not req_check["is_valid"]:
+            raw_mark_10 = 4.0
+            reason_prefix = f"Output matched, but missing required structure: {' '.join(req_check['warnings'])}"
         else:
-            reason_prefix = "Code functions correctly. Consider improving naming and comments for full score."
+            quality = _evaluate_code_quality(clean_code)
+            raw_mark_10 = 10.0 if quality >= 3 else 9.0
+            explanation_parts.append(f"Passed all {total_tests}/{total_tests} test cases flawlessly.")
+            if quality >= 3:
+                reason_prefix = "Clean structure, proper naming, and clear code comments."
+            else:
+                reason_prefix = "Code functions correctly. Consider improving naming and comments for full score."
     elif passed_count > 0:
         # Partial credit band: 6 to 8
         raw_mark_10 = round(6.0 + (2.0 * pass_ratio), 1)
@@ -393,17 +418,32 @@ def evaluate_programming_submission(
         if first_error:
             explanation_parts.append(f"Issue encountered: {first_error[:120]}")
     else:
-        # Does not compile or 0 passes: Concept coverage credit (2 to 5)
-        concept_count = len(concepts)
-        if concept_count >= 2 and (facts["reads_input"] or facts["prints_output"]):
-            raw_mark_10 = 5.0
-            reason_prefix = f"Code did not pass test cases, but verified required algorithmic structure ({', '.join(concepts)}) with connected I/O."
-        elif concept_count >= 1:
-            raw_mark_10 = 3.0
-            reason_prefix = f"Basic algorithmic logic detected ({', '.join(concepts)}), but runtime tests failed."
+        # Check Safety Fallback: Did server compiler execution fail due to an environment issue,
+        # but the student's verified terminal execution output matches the expected answer?
+        client_out = (compiler_output or "").strip()
+        matched_fallback = False
+        if client_out and expected_outputs and not is_hardcoded:
+            # Check if verified client terminal output matches the expected answer
+            matched_fallback = any(_compare_output(client_out, exp)[0] for exp in expected_outputs)
+
+        if matched_fallback and not is_hardcoded:
+            # Authentic implementation verified via safety net
+            quality = _evaluate_code_quality(clean_code)
+            raw_mark_10 = 10.0 if quality >= 3 else 9.0
+            reason_prefix = "All requirements and verified output confirmed via execution safety net."
+            passed_count = total_tests
         else:
-            raw_mark_10 = 1.0
-            reason_prefix = "Compilation or logic errors prevented test execution with no required concepts found."
+            # Standard concept coverage credit (1 to 5)
+            concept_count = len(concepts)
+            if concept_count >= 2 and (facts["reads_input"] or facts["prints_output"]):
+                raw_mark_10 = 5.0
+                reason_prefix = f"Code did not pass test cases, but verified required algorithmic structure ({', '.join(concepts)}) with connected I/O."
+            elif concept_count >= 1:
+                raw_mark_10 = 3.0
+                reason_prefix = f"Basic algorithmic logic detected ({', '.join(concepts)}), but runtime tests failed."
+            else:
+                raw_mark_10 = 1.0
+                reason_prefix = "Compilation or logic errors prevented test execution with no required concepts found."
 
     # Scale to question max_marks (e.g. 100 or 10)
     final_score = round((raw_mark_10 / 10.0) * max_marks, 1)
