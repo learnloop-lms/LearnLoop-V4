@@ -1,19 +1,21 @@
 """
 Learn Loop — Module Completion Summary PDF Generator
 Generates on-the-fly academic report of student's Quiz and/or Task submissions
-with diagonal Registration Number watermark.
+with diagonal Registration Number watermark rendered as a foreground overlay.
 Supports separate reports (Quiz only, Task only, or Combined).
 """
 
 import io
+import re
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether, HRFlowable
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether, HRFlowable, Preformatted
 )
+from reportlab.pdfgen import canvas
 
 def _cognitive_ui_name(level_str: Optional[str]) -> str:
     lvl = (level_str or "").lower()
@@ -35,6 +37,214 @@ def _difficulty_name(level_str: Optional[str]) -> str:
         return "Hard"
     return "Medium"
 
+def _format_multiline_code(raw_code: str) -> str:
+    """
+    Normalizes and formats source code line-by-line:
+    - Preserves indentation and newlines
+    - Automatically formats single-line code if submitted without newlines
+    - Soft-wraps long lines (>76 chars) to prevent PDF overflow
+    """
+    if not raw_code:
+        return "No solution submitted."
+
+    code = raw_code.replace("\r\n", "\n").replace("\r", "\n")
+    if "\\n" in code and "\n" not in code:
+        code = code.replace("\\n", "\n").replace("\\t", "    ")
+
+    lines = [l for l in code.split("\n") if l.strip()]
+
+    # If code was submitted as a single packed line or has multiple statements crammed on one line:
+    semicolon_count = code.count(";")
+    brace_count = code.count("{")
+    if (len(lines) <= 3 and (semicolon_count >= 2 or brace_count >= 1)) or (semicolon_count > len(lines) * 2):
+        # 1. Break header includes onto separate lines
+        code = re.sub(r'(#include\s*<[^>]+>)\s*', r'\1\n', code)
+        code = re.sub(r'(#include\s*"[^"]+")\s*', r'\1\n', code)
+
+        formatted = []
+        indent = 0
+        paren_depth = 0
+        curr = ""
+
+        i = 0
+        while i < len(code):
+            ch = code[i]
+
+            # Skip over string literals
+            if ch in ['"', "'"]:
+                quote_char = ch
+                curr += ch
+                i += 1
+                while i < len(code):
+                    curr += code[i]
+                    if code[i] == quote_char and (i == 0 or code[i - 1] != '\\'):
+                        break
+                    i += 1
+                i += 1
+                continue
+
+            # Track parenthesis depth (e.g. for (int i=0; i<n; i++))
+            if ch == "(":
+                paren_depth += 1
+                curr += ch
+            elif ch == ")":
+                paren_depth = max(0, paren_depth - 1)
+                curr += ch
+            elif ch == "{" and paren_depth == 0:
+                curr += ch
+                formatted.append("    " * indent + curr.strip())
+                curr = ""
+                indent += 1
+            elif ch == "}" and paren_depth == 0:
+                if curr.strip():
+                    formatted.append("    " * indent + curr.strip())
+                    curr = ""
+                indent = max(0, indent - 1)
+                if i + 1 < len(code) and code[i + 1] == ';':
+                    formatted.append("    " * indent + "};")
+                    i += 1
+                else:
+                    formatted.append("    " * indent + "}")
+            elif ch == ";" and paren_depth == 0:
+                curr += ch
+                formatted.append("    " * indent + curr.strip())
+                curr = ""
+            elif ch == "\n":
+                if curr.strip():
+                    formatted.append("    " * indent + curr.strip())
+                    curr = ""
+            else:
+                curr += ch
+            i += 1
+
+        if curr.strip():
+            formatted.append("    " * indent + curr.strip())
+
+        lines = [l for l in formatted if l.strip()]
+
+    # Soft-wrap lines longer than 76 characters with continuation indent
+    wrapped = []
+    for line in lines:
+        if len(line) <= 76:
+            wrapped.append(line)
+        else:
+            start = 0
+            while start < len(line):
+                chunk = line[start:start + 72]
+                if start > 0:
+                    wrapped.append("    " + chunk)
+                else:
+                    wrapped.append(chunk)
+                start += 72
+
+    return "\n".join(wrapped) if wrapped else "No solution submitted."
+
+def _parse_text_and_code_elements(raw_text: str) -> List[Tuple[str, str]]:
+    """
+    Parses questions that may contain code snippets (debugging questions,
+    output prediction questions, or missing lines of code) into:
+    [("text", narrative), ("code", snippet), ...]
+    so that code is rendered line-by-line as Preformatted and narrative as text.
+    Also structures 'Step 1:', 'Step 2:' context lines cleanly.
+    """
+    if not raw_text:
+        return [("text", "")]
+
+    norm = raw_text.replace("\r\n", "\n").replace("\r", "\n")
+
+    # 1. Check for Markdown triple backticks ```code```
+    if "```" in norm:
+        parts = norm.split("```")
+        result = []
+        for i, part in enumerate(parts):
+            if i % 2 == 1:
+                code_text = part.strip()
+                # Remove language identifier on first line if present
+                lines = code_text.split("\n")
+                if lines and lines[0].strip().lower() in ["c", "cpp", "python", "py", "java", "js", "javascript"]:
+                    code_text = "\n".join(lines[1:])
+                result.append(("code", code_text))
+            else:
+                if part.strip():
+                    result.append(("text", part.strip()))
+        return result
+
+    # 2. Check Step-based formatting (e.g. Context: Step 1: ... Step 2: ... Question: ...)
+    if "Step 1:" in norm and "Step 2:" in norm:
+        formatted = re.sub(r'\s*(Step \d+:)', r'\n\1', norm)
+        formatted = re.sub(r'\s*(Question:)', r'\n\n\1', formatted)
+        formatted = re.sub(r'^(Context:)\s*', r'\1\n', formatted)
+        return [("text", formatted.strip())]
+
+    # 3. Check code indicators for debugging / output prediction questions
+    code_indicators = [
+        "#include", "int main(", "void main(", "public class", "def ",
+        "typedef struct", "printf(", "cout <<", "System.out"
+    ]
+    has_code_indicator = any(ind in norm for ind in code_indicators)
+
+    if has_code_indicator and "\n" in norm:
+        lines = norm.split("\n")
+        narrative = []
+        code_lines = []
+        in_code = False
+
+        for l in lines:
+            l_str = l.strip()
+            if not in_code and any(ind in l for ind in code_indicators):
+                in_code = True
+
+            if in_code:
+                # Detect end of code snippet where question text resumes
+                if l_str.startswith("Question:") or l_str.startswith("What is ") or l_str.startswith("What will ") or l_str.startswith("Find "):
+                    in_code = False
+                    narrative.append(l)
+                else:
+                    code_lines.append(l)
+            else:
+                narrative.append(l)
+
+        if code_lines:
+            res = []
+            if narrative:
+                res.append(("text", "\n".join(narrative)))
+            res.append(("code", "\n".join(code_lines)))
+            return res
+
+    # 4. Default: return narrative
+    return [("text", norm)]
+
+def get_watermark_canvas_maker(watermark_text: str):
+    """
+    Creates a custom ReportLab Canvas that draws the student's Roll / Registration
+    number as a semi-transparent foreground watermark OVER all page content.
+    Because showPage() runs AFTER the story flowables are drawn, the watermark
+    is never obscured or trapped behind solid table backgrounds.
+    """
+    reg_clean = (watermark_text or "STUDENT").strip().upper()
+
+    class WatermarkCanvas(canvas.Canvas):
+        def showPage(self):
+            self.saveState()
+
+            # Primary Center Diagonal Watermark (Overlay above quiz & task cards)
+            self.setFont("Helvetica-Bold", 46)
+            self.setFillColor(colors.HexColor("#6366F1"), alpha=0.18)
+            self.translate(306, 396)
+            self.rotate(45)
+            self.drawCentredString(0, 0, reg_clean)
+
+            # Secondary upper and lower diagonal watermarks for full page coverage
+            self.setFont("Helvetica-Bold", 30)
+            self.setFillColor(colors.HexColor("#6366F1"), alpha=0.12)
+            self.drawCentredString(0, 230, reg_clean)
+            self.drawCentredString(0, -230, reg_clean)
+
+            self.restoreState()
+            super().showPage()
+
+    return WatermarkCanvas
+
 def generate_module_summary_pdf(
     student: Any,
     course: Any,
@@ -47,7 +257,7 @@ def generate_module_summary_pdf(
 ) -> io.BytesIO:
     """
     Generates a beautifully styled in-memory PDF report.
-    Watermark: student.regno across all pages.
+    Watermark: student.regno across all pages (rendered as a foreground overlay).
     """
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -60,16 +270,6 @@ def generate_module_summary_pdf(
     )
 
     watermark_text = getattr(student, "regno", "STUDENT") or "STUDENT"
-
-    def draw_watermark(canvas, document):
-        canvas.saveState()
-        canvas.setFont("Helvetica-Bold", 54)
-        # Translucent light purple/gray watermark
-        canvas.setFillColor(colors.HexColor("#6366F1"), alpha=0.10)
-        canvas.translate(300, 400)
-        canvas.rotate(45)
-        canvas.drawCentredString(0, 0, watermark_text.upper())
-        canvas.restoreState()
 
     styles = getSampleStyleSheet()
 
@@ -116,12 +316,18 @@ def generate_module_summary_pdf(
         textColor=colors.HexColor("#1F2937")
     )
     style_code = ParagraphStyle(
-        'Code',
-        parent=styles['Normal'],
+        'CodePreformatted',
+        fontName='Courier',
+        fontSize=8,
+        leading=11,
+        textColor=colors.HexColor("#0F172A")
+    )
+    style_q_code = ParagraphStyle(
+        'QuestionCodeSnippet',
         fontName='Courier',
         fontSize=7.5,
         leading=10,
-        textColor=colors.HexColor("#111827")
+        textColor=colors.HexColor("#0F172A")
     )
 
     story = []
@@ -259,19 +465,34 @@ def generate_module_summary_pdf(
                     f"[Difficulty: {diff_ui}]"
                 )
 
-                q_text = resp.get("question_text", "Question")
-                student_ans = resp.get("student_answer", "N/A")
-                correct_ans = resp.get("correct_answer", "N/A")
+                q_raw_text = str(resp.get("question_text", "Question"))
+                student_ans = str(resp.get("student_answer", "N/A"))
+                correct_ans = str(resp.get("correct_answer", "N/A"))
+
+                # Parse question for narrative and code elements
+                parsed_q_elements = _parse_text_and_code_elements(q_raw_text)
 
                 q_card_data = [
-                    [Paragraph(sub_text, style_q_subtitle)],
-                    [Paragraph(f"<b>Question:</b> {q_text}", style_body)],
-                    [Paragraph(f"<b>Student Answer:</b> {student_ans}&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;<b>Correct Answer:</b> {correct_ans}", style_body)],
-                    [Paragraph(f"<b>Marks Awarded:</b> <font color='{mark_color.hexval()}'><b>{mark_text}</b></font>", style_body)]
+                    [Paragraph(sub_text, style_q_subtitle)]
                 ]
 
-                t_q = Table(q_card_data, colWidths=[540])
-                t_q.setStyle(TableStyle([
+                code_row_indices = []
+                for p_idx, (elem_type, elem_val) in enumerate(parsed_q_elements):
+                    if elem_type == "code":
+                        formatted_code = _format_multiline_code(elem_val)
+                        code_flowable = Preformatted(formatted_code, style_q_code)
+                        code_row_indices.append(len(q_card_data))
+                        q_card_data.append([code_flowable])
+                    else:
+                        formatted_html = elem_val.replace("\r\n", "<br/>").replace("\n", "<br/>")
+                        prefix = "<b>Question:</b> " if p_idx == 0 else ""
+                        q_card_data.append([Paragraph(f"{prefix}{formatted_html}", style_body)])
+
+                q_card_data.append([Paragraph(f"<b>Student Answer:</b> {student_ans}&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;<b>Correct Answer:</b> {correct_ans}", style_body)])
+                q_card_data.append([Paragraph(f"<b>Marks Awarded:</b> <font color='{mark_color.hexval()}'><b>{mark_text}</b></font>", style_body)])
+
+                # Build table styles
+                t_styles = [
                     ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#FFFFFF")),
                     ('BOX', (0, 0), (-1, -1), 0.75, colors.HexColor("#CBD5E1")),
                     ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#EEF2FF")),
@@ -279,8 +500,21 @@ def generate_module_summary_pdf(
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
                     ('LEFTPADDING', (0, 0), (-1, -1), 8),
                     ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-                ]))
+                ]
 
+                # Style any embedded code snippet rows with distinct console box
+                for r_idx in code_row_indices:
+                    t_styles.extend([
+                        ('BACKGROUND', (0, r_idx), (-1, r_idx), colors.HexColor("#F1F5F9")),
+                        ('BOX', (0, r_idx), (-1, r_idx), 0.5, colors.HexColor("#CBD5E1")),
+                        ('TOPPADDING', (0, r_idx), (-1, r_idx), 6),
+                        ('BOTTOMPADDING', (0, r_idx), (-1, r_idx), 6),
+                        ('LEFTPADDING', (0, r_idx), (-1, r_idx), 10),
+                        ('RIGHTPADDING', (0, r_idx), (-1, r_idx), 10),
+                    ])
+
+                t_q = Table(q_card_data, colWidths=[540])
+                t_q.setStyle(TableStyle(t_styles))
                 story.append(KeepTogether([t_q, Spacer(1, 8)]))
 
         story.append(Spacer(1, 10))
@@ -308,35 +542,72 @@ def generate_module_summary_pdf(
                 f"[Complexity Level: {task_diff} ({raw_comp.capitalize()})]"
             )
 
-            prob_stmt = task_challenge.problem_statement or task_challenge.title or ""
+            raw_prob_stmt = task_challenge.problem_statement or task_challenge.title or ""
             sol_content = task_sub.submitted_code or task_sub.submitted_text or "No solution submitted."
-            sol_display = sol_content if len(sol_content) < 4000 else sol_content[:4000] + "\n...[truncated for print]"
+            sol_display = _format_multiline_code(sol_content)
             feedback = task_sub.teacher_feedback or getattr(task_sub, "auto_eval_explanation", "") or "Evaluated against task specifications."
 
+            code_flowable = Preformatted(sol_display, style_code)
+
+            # Parse problem statement in case it contains embedded code
+            parsed_prob_elements = _parse_text_and_code_elements(raw_prob_stmt)
+
             task_card_data = [
-                [Paragraph(task_sub_text, style_q_subtitle)],
-                [Paragraph(f"<b>Problem Statement:</b> {prob_stmt}", style_body)],
-                [Paragraph(f"<b>Submitted Solution ({prog_lang.upper()}):</b><br/><pre>{sol_display}</pre>", style_code)],
-                [Paragraph(f"<b>Marks Earned:</b> <font color='#059669'><b>{task_score:.1f} / {task_max:.0f}</b></font>", style_body)],
-                [Paragraph(f"<b>Autograder / Faculty Feedback & Evidence:</b> {feedback}", style_body)]
+                [Paragraph(task_sub_text, style_q_subtitle)]
             ]
 
-            t_task = Table(task_card_data, colWidths=[540])
-            t_task.setStyle(TableStyle([
+            prob_code_indices = []
+            for p_idx, (elem_type, elem_val) in enumerate(parsed_prob_elements):
+                if elem_type == "code":
+                    formatted_p_code = _format_multiline_code(elem_val)
+                    prob_code_indices.append(len(task_card_data))
+                    task_card_data.append([Preformatted(formatted_p_code, style_q_code)])
+                else:
+                    formatted_html = elem_val.replace("\r\n", "<br/>").replace("\n", "<br/>")
+                    prefix = "<b>Problem Statement:</b><br/>" if p_idx == 0 else ""
+                    task_card_data.append([Paragraph(f"{prefix}{formatted_html}", style_body)])
+
+            task_card_data.append([Paragraph(f"<b>Submitted Solution ({prog_lang.upper()}):</b>", style_body)])
+            sol_row_idx = len(task_card_data)
+            task_card_data.append([code_flowable])
+            task_card_data.append([Paragraph(f"<b>Marks Earned:</b> <font color='#059669'><b>{task_score:.1f} / {task_max:.0f}</b></font>", style_body)])
+            task_card_data.append([Paragraph(f"<b>Autograder / Faculty Feedback & Evidence:</b> {feedback}", style_body)])
+
+            task_styles = [
                 ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#FFFFFF")),
                 ('BOX', (0, 0), (-1, -1), 0.75, colors.HexColor("#CBD5E1")),
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#F5F3FF")),
-                ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor("#F8FAFC")),
+                ('BACKGROUND', (0, sol_row_idx), (-1, sol_row_idx), colors.HexColor("#F1F5F9")), # Solution code block
+                ('BOX', (0, sol_row_idx), (-1, sol_row_idx), 0.5, colors.HexColor("#CBD5E1")),
                 ('TOPPADDING', (0, 0), (-1, -1), 5),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
                 ('LEFTPADDING', (0, 0), (-1, -1), 8),
                 ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-            ]))
+                ('TOPPADDING', (0, sol_row_idx), (-1, sol_row_idx), 8),
+                ('BOTTOMPADDING', (0, sol_row_idx), (-1, sol_row_idx), 8),
+                ('LEFTPADDING', (0, sol_row_idx), (-1, sol_row_idx), 10),
+                ('RIGHTPADDING', (0, sol_row_idx), (-1, sol_row_idx), 10),
+            ]
+
+            # Style any embedded problem statement code rows
+            for r_idx in prob_code_indices:
+                task_styles.extend([
+                    ('BACKGROUND', (0, r_idx), (-1, r_idx), colors.HexColor("#F1F5F9")),
+                    ('BOX', (0, r_idx), (-1, r_idx), 0.5, colors.HexColor("#CBD5E1")),
+                    ('TOPPADDING', (0, r_idx), (-1, r_idx), 6),
+                    ('BOTTOMPADDING', (0, r_idx), (-1, r_idx), 6),
+                    ('LEFTPADDING', (0, r_idx), (-1, r_idx), 10),
+                    ('RIGHTPADDING', (0, r_idx), (-1, r_idx), 10),
+                ])
+
+            t_task = Table(task_card_data, colWidths=[540])
+            t_task.setStyle(TableStyle(task_styles))
             story.append(t_task)
 
     story.append(Spacer(1, 14))
     story.append(Paragraph("<i>Report generated automatically by Learn Loop LMS. Authenticity verified by Registration Watermark.</i>", style_subtitle))
 
-    doc.build(story, onFirstPage=draw_watermark, onLaterPages=draw_watermark)
+    # Build document using our custom WatermarkCanvas (foreground overlay)
+    doc.build(story, canvasmaker=get_watermark_canvas_maker(watermark_text))
     buffer.seek(0)
     return buffer

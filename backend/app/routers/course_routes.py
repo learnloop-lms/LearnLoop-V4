@@ -394,12 +394,25 @@ def get_student_module_progress(
             models.RevaluationRequest.assessment_id == last_task_sub.id
         ).order_by(models.RevaluationRequest.created_at.desc()).first()
 
+    quiz_reval = None
+    if last_quiz:
+        quiz_reval = db.query(models.RevaluationRequest).filter(
+            models.RevaluationRequest.student_id == current_user.id,
+            models.RevaluationRequest.assessment_type == "quiz",
+            models.RevaluationRequest.assessment_id == last_quiz.id
+        ).order_by(models.RevaluationRequest.created_at.desc()).first()
+
     return {
         "module_id": module_id,
         "passing_threshold": passing_threshold,
         "quiz_completed": quiz_completed,
+        "quiz_submission_id": last_quiz.id if last_quiz else None,
         "quiz_score": quiz_score,
         "quiz_passed": quiz_passed,
+        "quiz_revaluation_id": quiz_reval.id if quiz_reval else None,
+        "quiz_revaluation_status": quiz_reval.status if quiz_reval else None,
+        "quiz_revaluation_revised_score": quiz_reval.revised_score if quiz_reval else None,
+        "quiz_revaluation_notes": quiz_reval.teacher_notes if quiz_reval else None,
         "task_submitted": task_submitted,
         "task_submission_id": last_task_sub.id if last_task_sub else None,
         "task_status": task_status,

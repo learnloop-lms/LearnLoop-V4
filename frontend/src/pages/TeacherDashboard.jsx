@@ -279,6 +279,23 @@ export default function TeacherDashboard() {
     }
   };
 
+  const handleCorrectQuestionAndCascade = async (qId, newOpt, qNum) => {
+    if (!window.confirm(`Change correct answer key for Question ${qNum} to Option '${newOpt}'?\n\nThis will automatically re-score ALL students who attended this question, update their grades, leaderboard rank, and coins.`)) {
+      return;
+    }
+    try {
+      const res = await axios.post(`${API_BASE}/revaluations/correct-quiz-question`, {
+        question_id: qId,
+        new_correct_option: newOpt
+      });
+      alert(res.data?.message || `Question updated to Option ${newOpt} and all student scores recalculated!`);
+      fetchPendingRevaluations();
+      fetchAllSubmissions();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to update question key.');
+    }
+  };
+
   // Calculate breakdown stats for courses and topics
   const courseCounts = courses.map((c) => {
     const subs = allSubmissions.filter((s) => s.course_id === c.id);
@@ -1036,6 +1053,39 @@ export default function TeacherDashboard() {
                                     <span className="font-semibold text-emerald-600 dark:text-emerald-400">{q.correct_answer}</span>
                                   </div>
                                 </div>
+
+                                {/* Cascade Answer Key Correction */}
+                                {q.question_id && (
+                                  <div className="mt-2.5 pt-2 border-t border-slate-200/60 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
+                                    <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                                      <Sparkles className="w-3 h-3 text-amber-500" />
+                                      Update Key for ALL Students:
+                                    </span>
+                                    <div className="flex items-center gap-1.5">
+                                      {['A', 'B', 'C', 'D'].map((opt) => {
+                                        const isCurrent = (q.correct_option || '').toUpperCase() === opt;
+                                        return (
+                                          <button
+                                            key={opt}
+                                            type="button"
+                                            onClick={() => handleCorrectQuestionAndCascade(q.question_id, opt, qIdx + 1)}
+                                            disabled={isCurrent}
+                                            className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition cursor-pointer ${
+                                              isCurrent
+                                                ? 'bg-emerald-600 text-white cursor-default shadow-xs'
+                                                : isLight
+                                                ? 'bg-slate-200 hover:bg-amber-100 hover:text-amber-900 text-slate-700'
+                                                : 'bg-slate-800 hover:bg-amber-900/40 hover:text-amber-300 text-slate-300'
+                                            }`}
+                                            title={isCurrent ? 'Current Correct Option' : `Set Correct Option to ${opt} & Re-evaluate ALL students`}
+                                          >
+                                            Option {opt} {isCurrent && '✓'}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>

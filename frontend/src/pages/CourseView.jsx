@@ -273,18 +273,23 @@ export default function CourseView() {
 
   const handleRequestQuizRevaluation = async (e) => {
     e.preventDefault();
-    if (!quizRevalReason.trim() || !quizReviewData?.submission_id) return;
+    const submissionId = quizReviewData?.submission_id || quizReviewData?.id || progress?.quiz_submission_id;
+    if (!quizRevalReason.trim() || !submissionId) return;
     setSubmittingQuizReval(true);
     try {
       await axios.post(`${API_BASE}/revaluations`, {
         assessment_type: 'quiz',
-        assessment_id: quizReviewData.submission_id,
+        assessment_id: submissionId,
         student_reason: quizRevalReason
       });
       setQuizRevalMsg('Quiz revaluation request successfully submitted to your instructor!');
+      if (quizReviewData) {
+        setQuizReviewData(prev => ({ ...prev, revaluation_status: 'pending' }));
+      }
       setTimeout(() => {
         setQuizRevalReason('');
-      }, 3000);
+        if (activeModuleId) fetchModuleProgress(activeModuleId);
+      }, 2500);
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to submit quiz revaluation.');
     } finally {
@@ -908,7 +913,50 @@ export default function CourseView() {
                             <Download className="w-4 h-4" />
                             Download Quiz PDF
                           </button>
+                          {!progress?.quiz_revaluation_status && (
+                            <button
+                              onClick={() => handleOpenQuizReview(activeModule.id)}
+                              className="px-4 py-2.5 rounded-xl bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/40 dark:hover:bg-purple-900/50 border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <HelpCircle className="w-4 h-4" />
+                              Request Revaluation
+                            </button>
+                          )}
                         </div>
+
+                        {/* Quiz Revaluation Status Banners */}
+                        {progress?.quiz_revaluation_status === 'pending' && (
+                          <div className="mt-3 p-2.5 rounded-xl bg-purple-100/90 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-[11px] text-purple-900 dark:text-purple-300 flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-purple-600 shrink-0" />
+                            <span>Your Quiz Revaluation Request has been submitted and is currently pending instructor review.</span>
+                          </div>
+                        )}
+                        {progress?.quiz_revaluation_status === 'accepted' && (
+                          <div className="mt-3 p-2.5 rounded-xl bg-emerald-100/90 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-[11px] text-emerald-900 dark:text-emerald-300">
+                            <div className="flex items-center gap-2 font-bold">
+                              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <span>Quiz Revaluation Accepted! Revised Mark: {((progress.quiz_revaluation_revised_score ?? progress.quiz_score) > 10 ? ((progress.quiz_revaluation_revised_score ?? progress.quiz_score) / 10).toFixed(1) : Number(progress.quiz_revaluation_revised_score ?? progress.quiz_score).toFixed(1))} / 10 marks.</span>
+                            </div>
+                            {progress.quiz_revaluation_notes && (
+                              <p className="mt-1 text-[10px] text-emerald-800 dark:text-emerald-400 italic">
+                                Teacher Notes: &ldquo;{progress.quiz_revaluation_notes}&rdquo;
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {progress?.quiz_revaluation_status === 'rejected' && (
+                          <div className="mt-3 p-2.5 rounded-xl bg-slate-200/80 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[11px] text-slate-700 dark:text-slate-300">
+                            <div className="flex items-center gap-2 font-semibold">
+                              <AlertCircle className="w-4 h-4 text-slate-500 shrink-0" />
+                              <span>Quiz Revaluation Reviewed: Original mark retained ({(progress.quiz_score > 10 ? (progress.quiz_score / 10).toFixed(1) : Number(progress.quiz_score).toFixed(1))} / 10 marks).</span>
+                            </div>
+                            {progress.quiz_revaluation_notes && (
+                              <p className="mt-1 text-[10px] text-slate-500 italic">
+                                Notes: &ldquo;{progress.quiz_revaluation_notes}&rdquo;
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -1591,7 +1639,7 @@ export default function CourseView() {
                         ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300'
                         : 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300'
                     }`}>
-                      {quizReviewData.passed ? 'Passed' : 'Needs Retake'} • Score: {quizReviewData.score}/10
+                      {quizReviewData.passed ? 'Passed' : 'Needs Retake'} • Score: {quizReviewData.score ?? quizReviewData.msq_score}/10
                     </span>
                   )}
                 </div>
@@ -1624,14 +1672,14 @@ export default function CourseView() {
                 <div className="py-12 text-center text-slate-400 font-bold">
                   Loading quiz questions & submission review...
                 </div>
-              ) : !quizReviewData?.breakdown || quizReviewData.breakdown.length === 0 ? (
+              ) : (!quizReviewData?.breakdown && !quizReviewData?.responses_detail) || ((quizReviewData?.breakdown || quizReviewData?.responses_detail || []).length === 0) ? (
                 <div className="py-12 text-center text-slate-400">
                   No question breakdown available for this attempt.
                 </div>
               ) : (
                 <>
                   <div className="space-y-4">
-                    {quizReviewData.breakdown.map((item, idx) => (
+                    {(quizReviewData.breakdown || quizReviewData.responses_detail || []).map((item, idx) => (
                       <div
                         key={idx}
                         className={`p-4 rounded-2xl border ${
@@ -1681,47 +1729,81 @@ export default function CourseView() {
                     ))}
                   </div>
 
-                  {/* Revaluation Appeal Form */}
+                  {/* Revaluation Appeal Form & Status */}
                   <div className={`mt-6 p-5 rounded-2xl border ${
                     isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'
                   }`}>
                     <h4 className="font-bold text-sm mb-1 flex items-center gap-2">
                       <HelpCircle className="w-4 h-4 text-purple-500" />
-                      Request Quiz Revaluation / Appeal Marks
+                      Quiz Revaluation Appeal
                     </h4>
-                    <p className="text-[11px] text-slate-500 mb-3">
-                      Think an answer was marked incorrectly, or found an alternate valid solution? Send an appeal directly to your instructor for review.
-                    </p>
 
-                    <form onSubmit={handleRequestQuizRevaluation} className="space-y-3">
-                      <textarea
-                        rows={3}
-                        required
-                        placeholder="Specify which question(s) and why you believe your submitted answer should be awarded marks..."
-                        value={quizRevalReason}
-                        onChange={(e) => setQuizRevalReason(e.target.value)}
-                        className={`w-full p-3 rounded-xl border text-xs focus:outline-none focus:border-purple-500 ${
-                          isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-900 border-slate-700 text-white'
-                        }`}
-                      />
-
-                      {quizRevalMsg && (
-                        <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center gap-2">
-                          <CheckCircle className="w-4 h-4 shrink-0" />
-                          <span>{quizRevalMsg}</span>
-                        </div>
-                      )}
-
-                      <div className="flex justify-end">
-                        <button
-                          type="submit"
-                          disabled={submittingQuizReval || !quizRevalReason.trim()}
-                          className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold text-xs cursor-pointer shadow-md transition"
-                        >
-                          {submittingQuizReval ? 'Sending Appeal...' : 'Submit Quiz Revaluation Appeal'}
-                        </button>
+                    {(quizReviewData?.revaluation_status || progress?.quiz_revaluation_status) === 'pending' ? (
+                      <div className="p-3 rounded-xl bg-purple-100/90 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 text-xs text-purple-900 dark:text-purple-300 flex items-center gap-2 mt-2">
+                        <Clock className="w-4 h-4 text-purple-600 shrink-0" />
+                        <span>Your Quiz Revaluation Request is currently pending instructor review.</span>
                       </div>
-                    </form>
+                    ) : (quizReviewData?.revaluation_status || progress?.quiz_revaluation_status) === 'accepted' ? (
+                      <div className="p-3 rounded-xl bg-emerald-100/90 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-xs text-emerald-900 dark:text-emerald-300 mt-2">
+                        <div className="flex items-center gap-2 font-bold">
+                          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>Revaluation Accepted! Revised Mark: {((quizReviewData?.revaluation_revised_score ?? progress?.quiz_revaluation_revised_score ?? quizReviewData?.score) > 10 ? ((quizReviewData?.revaluation_revised_score ?? progress?.quiz_revaluation_revised_score ?? quizReviewData?.score) / 10).toFixed(1) : Number(quizReviewData?.revaluation_revised_score ?? progress?.quiz_revaluation_revised_score ?? quizReviewData?.score).toFixed(1))} / 10 marks.</span>
+                        </div>
+                        {(quizReviewData?.revaluation_notes || progress?.quiz_revaluation_notes) && (
+                          <p className="mt-1 text-[11px] text-emerald-800 dark:text-emerald-400 italic">
+                            Teacher Notes: &ldquo;{quizReviewData?.revaluation_notes || progress?.quiz_revaluation_notes}&rdquo;
+                          </p>
+                        )}
+                      </div>
+                    ) : (quizReviewData?.revaluation_status || progress?.quiz_revaluation_status) === 'rejected' ? (
+                      <div className="p-3 rounded-xl bg-slate-200/80 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 mt-2">
+                        <div className="flex items-center gap-2 font-semibold">
+                          <AlertCircle className="w-4 h-4 text-slate-500 shrink-0" />
+                          <span>Revaluation Reviewed: Original mark retained.</span>
+                        </div>
+                        {(quizReviewData?.revaluation_notes || progress?.quiz_revaluation_notes) && (
+                          <p className="mt-1 text-[11px] text-slate-500 italic">
+                            Teacher Notes: &ldquo;{quizReviewData?.revaluation_notes || progress?.quiz_revaluation_notes}&rdquo;
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-[11px] text-slate-500 mb-3">
+                          Think an answer was marked incorrectly, or found an alternate valid solution? Send an appeal directly to your instructor for review.
+                        </p>
+
+                        <form onSubmit={handleRequestQuizRevaluation} className="space-y-3">
+                          <textarea
+                            rows={3}
+                            required
+                            placeholder="Specify which question(s) and why you believe your submitted answer should be awarded marks..."
+                            value={quizRevalReason}
+                            onChange={(e) => setQuizRevalReason(e.target.value)}
+                            className={`w-full p-3 rounded-xl border text-xs focus:outline-none focus:border-purple-500 ${
+                              isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-900 border-slate-700 text-white'
+                            }`}
+                          />
+
+                          {quizRevalMsg && (
+                            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center gap-2">
+                              <CheckCircle className="w-4 h-4 shrink-0" />
+                              <span>{quizRevalMsg}</span>
+                            </div>
+                          )}
+
+                          <div className="flex justify-end">
+                            <button
+                              type="submit"
+                              disabled={submittingQuizReval || !quizRevalReason.trim()}
+                              className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold text-xs cursor-pointer shadow-md transition"
+                            >
+                              {submittingQuizReval ? 'Sending Appeal...' : 'Submit Quiz Revaluation Appeal'}
+                            </button>
+                          </div>
+                        </form>
+                      </>
+                    )}
                   </div>
                 </>
               )}

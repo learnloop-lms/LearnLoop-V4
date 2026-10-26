@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models, schemas, auth
+from app.services.quiz_revaluation import cascade_quiz_question_revaluation
 from app.services.ai_engine import ai_engine
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -392,8 +393,12 @@ def update_quiz_question(
         q.option_c = req.option_c
     if req.option_d is not None:
         q.option_d = req.option_d
+    old_corr = (q.correct_option or "").strip().upper()
+    new_corr = req.correct_option.strip().upper() if req.correct_option is not None else None
+    option_changed = new_corr and (new_corr != old_corr)
+
     if req.correct_option is not None:
-        q.correct_option = req.correct_option.strip()
+        q.correct_option = new_corr
     if req.hint_text is not None:
         q.hint_text = req.hint_text
     if req.explanation is not None:
@@ -401,7 +406,24 @@ def update_quiz_question(
 
     db.commit()
     db.refresh(q)
-    return {"message": "Quiz question updated successfully", "id": q.id}
+
+    cascade_info = None
+    if option_changed:
+        try:
+            cascade_info = cascade_quiz_question_revaluation(
+                question_id=question_id,
+                new_correct_option=new_corr,
+                db=db,
+                new_explanation=req.explanation
+            )
+        except Exception as e:
+            print(f"Error in cascade_quiz_question_revaluation: {e}")
+
+    return {
+        "message": "Quiz question updated successfully" + (f" and cascaded to {cascade_info['affected_count']} student submissions" if cascade_info else ""),
+        "id": q.id,
+        "cascade": cascade_info
+    }
 
 
 @router.delete("/questions/{question_id}")
@@ -848,14 +870,29 @@ def get_my_quiz_submission(
     course = module.course if module else None
     passing_threshold = course.passing_threshold_p if course else 5.0
 
+    quiz_reval = db.query(models.RevaluationRequest).filter(
+        models.RevaluationRequest.student_id == current_user.id,
+        models.RevaluationRequest.assessment_type == "quiz",
+        models.RevaluationRequest.assessment_id == sub.id
+    ).order_by(models.RevaluationRequest.created_at.desc()).first()
+
+    responses = sub.responses_detail or []
+
     return {
         "id": sub.id,
+        "submission_id": sub.id,
         "module_id": sub.module_id,
         "concept_name": module.concept_name if module else "Quiz",
         "msq_score": sub.msq_score,
-        "total_questions": len(sub.responses_detail) if sub.responses_detail else 10,
+        "score": sub.msq_score,
+        "total_questions": len(responses) if responses else 10,
         "passing_threshold": passing_threshold,
         "passed": sub.msq_score >= passing_threshold,
         "submitted_at": sub.submitted_at,
-        "responses_detail": sub.responses_detail or []
+        "responses_detail": responses,
+        "breakdown": responses,
+        "revaluation_id": quiz_reval.id if quiz_reval else None,
+        "revaluation_status": quiz_reval.status if quiz_reval else None,
+        "revaluation_revised_score": quiz_reval.revised_score if quiz_reval else None,
+        "revaluation_notes": quiz_reval.teacher_notes if quiz_reval else None
     }

@@ -5,6 +5,7 @@ from app.database import get_db
 from app import models, schemas, auth
 from app.services.ai_engine import ai_engine
 from app.services.gamification import calculate_reward_coins, check_streak_and_promotion
+from app.services.quiz_revaluation import cascade_quiz_question_revaluation
 
 router = APIRouter(prefix="/revaluations", tags=["Assessment Revaluations"])
 
@@ -129,6 +130,31 @@ def get_pending_revaluations(
         })
     return res
 
+@router.post("/correct-quiz-question")
+def correct_quiz_question_and_recalculate(
+    req: schemas.CorrectQuizQuestionRequest,
+    current_user = Depends(auth.get_current_user),
+    db: Session = Depends(get_db)
+):
+    if getattr(current_user, "current_role", "") != "teacher":
+        raise HTTPException(status_code=403, detail="Teachers only.")
+
+    try:
+        res = cascade_quiz_question_revaluation(
+            question_id=req.question_id,
+            new_correct_option=req.new_correct_option,
+            db=db,
+            new_explanation=req.new_explanation
+        )
+        return {
+            "message": f"Successfully updated question answer key from '{res['old_correct_option']}' to '{res['new_correct_option']}'. All {res['affected_count']} students who answered this question have had their scores and progress updated!",
+            **res
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to cascade revaluation: {str(e)}")
+
 @router.post("/{reval_id}/resolve")
 @router.post("/resolve/{reval_id}")
 def resolve_revaluation(
@@ -146,6 +172,16 @@ def resolve_revaluation(
 
     rev.status = req.status.lower()
     rev.teacher_notes = req.teacher_notes
+
+    if req.corrected_question_id and req.new_correct_option:
+        try:
+            cascade_quiz_question_revaluation(
+                question_id=req.corrected_question_id,
+                new_correct_option=req.new_correct_option,
+                db=db
+            )
+        except Exception as e:
+            pass
 
     if req.status.lower() == "accepted" and req.revised_score is not None:
         raw_val = float(req.revised_score)

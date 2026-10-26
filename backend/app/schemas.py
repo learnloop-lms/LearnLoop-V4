@@ -377,6 +377,13 @@ class RevaluationResolveRequest(BaseModel):
     status: str # accepted or rejected
     revised_score: Optional[float] = None
     teacher_notes: Optional[str] = None
+    corrected_question_id: Optional[str] = None
+    new_correct_option: Optional[str] = None
+
+class CorrectQuizQuestionRequest(BaseModel):
+    question_id: str
+    new_correct_option: str
+    new_explanation: Optional[str] = None
 
 # -----------------------------------------------------------------------------
 # Peer Learning
