@@ -26,7 +26,7 @@ def register_student(req: schemas.StudentRegister, db: Session = Depends(get_db)
         form_submission=False,
         cognitive_level="average",
         hearts=5,
-        total_coins=0,
+        total_coins=100, # Initial 100 coins welcome reward for lifelines
         total_keys=1
     )
     db.add(student)

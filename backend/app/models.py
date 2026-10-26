@@ -48,7 +48,7 @@ class Student(Base):
     # Gamification Lifelines & Currency
     hearts = Column(Integer, default=5)
     last_heart_loss_at = Column(DateTime, nullable=True)
-    total_coins = Column(Integer, default=0)
+    total_coins = Column(Integer, default=100) # Initial 100 coins welcome reward for lifelines
     total_keys = Column(Integer, default=1)
     free_hints = Column(Integer, default=2)
     free_extra_time = Column(Integer, default=1)
