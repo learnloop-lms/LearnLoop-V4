@@ -783,25 +783,28 @@ def submit_task(
                 problem_statement=task.problem_statement or "",
                 starter_code=task.starter_code or "",
                 compiler_output=req.compiler_output or "",
-                max_marks=task.max_marks or 100
+                max_marks=10
             )
         else:
             # Descriptive / Open-ended
             eval_res = evaluate_descriptive_submission(
                 text=req.submitted_text or "",
                 problem_statement=task.problem_statement or "",
-                max_marks=task.max_marks or 100
+                max_marks=10
             )
     except Exception as e:
         print(f"[Autograder Error] Failed during auto-evaluation: {e}")
         # Safe fallback: Award base credit and queue for teacher review rather than failing the student's submission
         eval_res = {
-            "score": round((task.max_marks or 100) * 0.5, 1),
+            "score": 5.0,
             "explanation": f"Submission successfully recorded. Queued for instructor evaluation.",
             "confidence": "manual_review"
         }
 
-    awarded_score = float(eval_res.get("score", 0.0))
+    raw_awarded = float(eval_res.get("score", 0.0))
+    # Normalize to 0-10 scale
+    awarded_score = round(raw_awarded / 10.0, 1) if raw_awarded > 10.0 else round(raw_awarded, 1)
+    awarded_score = max(0.0, min(10.0, awarded_score))
     explanation = eval_res.get("explanation", "Evaluation completed.")
     confidence = eval_res.get("confidence", "high")
 
@@ -833,12 +836,15 @@ def submit_task(
         ).order_by(models.QuizSubmission.submitted_at.desc()).first()
 
         msq = last_quiz.msq_score if last_quiz else 0.0
+        if msq > 10.0:
+            msq = round(msq / 10.0, 1)
         mst = awarded_score
 
         w1 = course.w1_quiz_weight if course else 0.5
         w2 = course.w2_task_weight if course else 0.5
         scaled_msq = msq * 10.0 if msq <= 10.0 else msq
-        tp = (w1 * scaled_msq) + (w2 * mst)
+        scaled_mst = mst * 10.0 if mst <= 10.0 else mst
+        tp = (w1 * scaled_msq) + (w2 * scaled_mst)
 
         cmc = module.complexity_cmc or 1
         raw_label, leaderboard_level = ai_engine.predict_cognitive_update(cmc, tp)
@@ -959,13 +965,13 @@ def get_pending_task_evaluations(
             "task_type": task.task_type if task else "programming",
             "complexity_qlc": task.complexity_qlc if task else "basic",
             "problem_statement": task.problem_statement if task else "",
-            "max_marks": task.max_marks if task else 100,
+            "max_marks": 10,
             "programming_language": p.programming_language,
             "submitted_code": p.submitted_code,
             "submitted_text": p.submitted_text,
             "compiler_output": p.compiler_output,
-            "mst_score": p.mst_score,
-            "auto_eval_score": p.auto_eval_score,
+            "mst_score": round(p.mst_score / 10.0, 1) if (p.mst_score and p.mst_score > 10.0) else (round(p.mst_score, 1) if p.mst_score is not None else None),
+            "auto_eval_score": round(p.auto_eval_score / 10.0, 1) if (p.auto_eval_score and p.auto_eval_score > 10.0) else (round(p.auto_eval_score, 1) if p.auto_eval_score is not None else None),
             "auto_eval_explanation": p.auto_eval_explanation,
             "auto_eval_confidence": p.auto_eval_confidence,
             "teacher_feedback": p.teacher_feedback,
@@ -1054,12 +1060,12 @@ def get_all_task_submissions(
             "task_type": task.task_type if task else "programming",
             "complexity_qlc": task.complexity_qlc if task else "basic",
             "problem_statement": task.problem_statement if task else "",
-            "max_marks": task.max_marks if task else 100,
+            "max_marks": 10,
             "programming_language": p.programming_language,
             "submitted_code": p.submitted_code,
             "submitted_text": p.submitted_text,
             "compiler_output": p.compiler_output,
-            "mst_score": p.mst_score,
+            "mst_score": round(p.mst_score / 10.0, 1) if (p.mst_score and p.mst_score > 10.0) else (round(p.mst_score, 1) if p.mst_score is not None else None),
             "teacher_feedback": p.teacher_feedback,
             "evaluated_at": p.evaluated_at,
             "submitted_at": p.submitted_at
@@ -1085,22 +1091,30 @@ def grade_task_submission(
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found.")
 
+    raw_req_score = float(req.mst_score)
+    # Normalize to 0-10 scale (auto-correct if entered > 10 e.g. 75 -> 7.5)
+    grade_score = round(raw_req_score / 10.0, 1) if raw_req_score > 10.0 else round(raw_req_score, 1)
+    grade_score = max(0.0, min(10.0, grade_score))
+
     orig_auto_score = sub.auto_eval_score if sub.auto_eval_score is not None else sub.mst_score
-    sub.mst_score = req.mst_score
+    if orig_auto_score and orig_auto_score > 10.0:
+        orig_auto_score = round(orig_auto_score / 10.0, 1)
+
+    sub.mst_score = grade_score
     sub.teacher_feedback = req.teacher_feedback
     sub.evaluated_by = current_user.id
     sub.evaluated_at = datetime.utcnow()
     sub.is_calibrated = True
 
     # RLHF calibration logging
-    delta = float(req.mst_score) - float(orig_auto_score or 0.0)
+    delta = grade_score - float(orig_auto_score or 0.0)
     calib = models.EvaluationCalibrationLog(
         submission_id=sub.id,
         student_id=sub.student_id,
         task_id=sub.task_id,
         assessment_type=sub.task.task_type if sub.task else "programming",
         auto_score=float(orig_auto_score or 0.0),
-        faculty_score=float(req.mst_score),
+        faculty_score=grade_score,
         score_delta=delta,
         confidence=sub.auto_eval_confidence,
         auto_explanation=sub.auto_eval_explanation,
@@ -1121,15 +1135,17 @@ def grade_task_submission(
     ).order_by(models.QuizSubmission.submitted_at.desc()).first()
 
     msq = last_quiz.msq_score if last_quiz else 0.0
-    mst = req.mst_score
+    if msq > 10.0:
+        msq = round(msq / 10.0, 1)
+    mst = grade_score
 
     w1 = course.w1_quiz_weight if course else 0.5
     w2 = course.w2_task_weight if course else 0.5
 
     # Total performance score: tp = w1 * msq + w2 * mst (scaled to 100)
-    # Assuming msq is out of 10, scale msq to 100: (msq * 10)
     scaled_msq = msq * 10.0 if msq <= 10.0 else msq
-    tp = (w1 * scaled_msq) + (w2 * mst)
+    scaled_mst = mst * 10.0 if mst <= 10.0 else mst
+    tp = (w1 * scaled_msq) + (w2 * scaled_mst)
 
     # 2. ANN Model 4: Cognitive Update
     # THIS MODEL ALONE UPDATES THE LEADERBOARD!

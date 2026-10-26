@@ -38,6 +38,20 @@ try:
                 conn.commit()
             except Exception:
                 pass
+
+        # Idempotent normalization: ensure all task scores and max_marks follow the 0-10 band
+        for heal_stmt in [
+            "UPDATE task_submissions SET mst_score = ROUND(mst_score / 10.0, 1) WHERE mst_score > 10.0",
+            "UPDATE task_submissions SET auto_eval_score = ROUND(auto_eval_score / 10.0, 1) WHERE auto_eval_score > 10.0",
+            "UPDATE revaluation_requests SET revised_score = ROUND(revised_score / 10.0, 1) WHERE revised_score > 10.0",
+            "UPDATE revaluation_requests SET original_score = ROUND(original_score / 10.0, 1) WHERE original_score > 10.0",
+            "UPDATE task_challenges SET max_marks = 10 WHERE max_marks > 10"
+        ]:
+            try:
+                conn.execute(text(heal_stmt))
+                conn.commit()
+            except Exception:
+                pass
 except Exception:
     pass
 

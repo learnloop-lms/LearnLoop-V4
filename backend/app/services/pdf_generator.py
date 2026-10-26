@@ -141,8 +141,12 @@ def generate_module_summary_pdf(
 
     # Calculate overall marks and timing
     quiz_score = float(quiz_sub.msq_score) if (quiz_sub and quiz_sub.msq_score is not None) else 0.0
+    if quiz_score > 10.0:
+        quiz_score = round(quiz_score / 10.0, 1)
     task_score = float(task_sub.mst_score) if (task_sub and task_sub.mst_score is not None) else 0.0
-    task_max = float(task_challenge.max_marks) if task_challenge else 100.0
+    if task_score > 10.0:
+        task_score = round(task_score / 10.0, 1)
+    task_max = 10.0
     prog_lang = getattr(task_sub, "programming_language", "N/A") or "N/A"
 
     def fmt_dt(dt):

@@ -148,7 +148,11 @@ def resolve_revaluation(
     rev.teacher_notes = req.teacher_notes
 
     if req.status.lower() == "accepted" and req.revised_score is not None:
-        rev.revised_score = float(req.revised_score)
+        raw_val = float(req.revised_score)
+        # Normalize to clean 0-10 scale (auto-correct if entered on 100 scale e.g. 75 -> 7.5)
+        val = round(raw_val / 10.0, 1) if raw_val > 10.0 else round(raw_val, 1)
+        val = max(0.0, min(10.0, val))
+        rev.revised_score = val
         student = db.query(models.Student).filter(models.Student.id == rev.student_id).first()
 
         module = None
@@ -159,9 +163,9 @@ def resolve_revaluation(
         if rev.assessment_type == "quiz":
             sub = db.query(models.QuizSubmission).filter(models.QuizSubmission.id == rev.assessment_id).first()
             if sub:
-                sub.msq_score = float(req.revised_score)
+                sub.msq_score = val
                 module = db.query(models.Module).filter(models.Module.id == sub.module_id).first()
-                msq = float(req.revised_score)
+                msq = val
                 # Check task submission if exists for this module
                 if module:
                     task_ids = [t.id for t in module.task_challenges]
@@ -170,24 +174,28 @@ def resolve_revaluation(
                         models.TaskSubmission.task_id.in_(task_ids)
                     ).order_by(models.TaskSubmission.submitted_at.desc()).first() if task_ids else None
                     mst = float(last_task_sub.mst_score) if (last_task_sub and last_task_sub.mst_score is not None) else 0.0
+                    if mst > 10.0:
+                        mst = round(mst / 10.0, 1)
 
         elif rev.assessment_type == "task":
             sub = db.query(models.TaskSubmission).filter(models.TaskSubmission.id == rev.assessment_id).first()
             if sub:
-                sub.mst_score = float(req.revised_score)
+                sub.mst_score = val
                 if req.teacher_notes:
                     sub.teacher_feedback = req.teacher_notes
                 sub.evaluated_by = current_user.id
                 sub.evaluated_at = datetime.utcnow()
                 if sub.task:
                     module = sub.task.module
-                mst = float(req.revised_score)
+                mst = val
                 if module:
                     last_quiz = db.query(models.QuizSubmission).filter(
                         models.QuizSubmission.student_id == rev.student_id,
                         models.QuizSubmission.module_id == module.id
                     ).order_by(models.QuizSubmission.submitted_at.desc()).first()
                     msq = float(last_quiz.msq_score) if last_quiz else 0.0
+                    if msq > 10.0:
+                        msq = round(msq / 10.0, 1)
 
         # Recalculate Model 4, Leaderboard Score (tp_total_performance), and Coins
         if module and student:
@@ -195,7 +203,8 @@ def resolve_revaluation(
             w1 = course.w1_quiz_weight if course else 0.5
             w2 = course.w2_task_weight if course else 0.5
             scaled_msq = msq * 10.0 if msq <= 10.0 else msq
-            tp = (w1 * scaled_msq) + (w2 * mst)
+            scaled_mst = mst * 10.0 if mst <= 10.0 else mst
+            tp = (w1 * scaled_msq) + (w2 * scaled_mst)
 
             # Re-evaluate ANN Model 4: Cognitive Update
             cmc = module.complexity_cmc or 1

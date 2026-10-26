@@ -506,7 +506,7 @@ export default function TaskView() {
               }`}>
                 {taskData.task_type} Challenge
               </span>
-              <span className="text-slate-500 font-medium">Max Marks: {taskData.max_marks}</span>
+              <span className="text-slate-500 font-medium">Max Marks: {taskData.max_marks <= 10 ? taskData.max_marks : 10}</span>
             </div>
 
             <h2 className={`text-xl font-black ${isLight ? 'text-slate-900' : 'text-white'}`}>
@@ -549,7 +549,7 @@ export default function TaskView() {
                   <CheckCircle className="w-4 h-4" /> Evaluated Solution
                 </h4>
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white font-black text-xs">
-                  Score: {evalResult.score} / {taskData.max_marks}
+                  Score: {evalResult.score > 10 ? (evalResult.score / 10).toFixed(1) : Number(evalResult.score).toFixed(1)} / {taskData.max_marks <= 10 ? taskData.max_marks : 10}
                 </span>
               </div>
               <p className={`text-[11px] leading-relaxed ${isLight ? 'text-emerald-800' : 'text-emerald-300/80'}`}>
@@ -768,7 +768,7 @@ export default function TaskView() {
             <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-500/30">
               <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Score Awarded</span>
               <div className="text-4xl font-black text-emerald-500 mt-1">
-                {evalResult.score} <span className="text-lg text-slate-400 font-medium">/ {taskData.max_marks}</span>
+                {evalResult.score > 10 ? (evalResult.score / 10).toFixed(1) : Number(evalResult.score).toFixed(1)} <span className="text-lg text-slate-400 font-medium">/ {taskData.max_marks <= 10 ? taskData.max_marks : 10}</span>
               </div>
               <p className="text-[11px] text-slate-400 mt-1">
                 Confidence: <strong className="text-indigo-400 capitalize">{evalResult.confidence}</strong> • Leaderboard points applied

@@ -201,10 +201,16 @@ export default function TeacherDashboard() {
       return;
     }
 
+    let numericScore = parseFloat(score);
+    if (numericScore > 10.0) {
+      numericScore = Math.round((numericScore / 10.0) * 10) / 10;
+    }
+    numericScore = Math.max(0, Math.min(10, numericScore));
+
     setGradingId(submissionId);
     try {
       const res = await axios.post(`${API_BASE}/tasks/grade/${submissionId}`, {
-        mst_score: parseFloat(score),
+        mst_score: numericScore,
         teacher_feedback: feedback
       });
       const tier = res.data?.model4_update?.leaderboard_level || res.data?.leaderboard_level || 'Updated';
@@ -239,10 +245,16 @@ export default function TeacherDashboard() {
       return;
     }
 
+    let numericScore = parseFloat(score);
+    if (numericScore > 10.0) {
+      numericScore = Math.round((numericScore / 10.0) * 10) / 10;
+    }
+    numericScore = Math.max(0, Math.min(10, numericScore));
+
     try {
       await axios.post(`${API_BASE}/revaluations/${revalId}/resolve`, {
         status: 'accepted',
-        revised_score: parseFloat(score),
+        revised_score: numericScore,
         teacher_notes: notes
       });
       alert('Revaluation accepted and mark updated successfully!');
@@ -732,7 +744,7 @@ export default function TeacherDashboard() {
                             {isGraded ? (
                               <>
                                 <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                                Corrected (Score: {sub.mst_score}/{sub.max_marks})
+                                Corrected (Score: {sub.mst_score != null ? (Number(sub.mst_score) > 10 ? (Number(sub.mst_score) / 10).toFixed(1) : Number(sub.mst_score).toFixed(1)) : '0.0'} / 10)
                               </>
                             ) : (
                               <>
@@ -760,7 +772,7 @@ export default function TeacherDashboard() {
                             Question Problem Statement: {sub.task_title}
                           </span>
                           <span className="text-slate-500 font-medium text-[11px]">
-                            Max Marks: {sub.max_marks} &bull; Difficulty: {sub.complexity_qlc}
+                            Max Marks: 10 &bull; Difficulty: {sub.complexity_qlc}
                           </span>
                         </div>
                         <div className="text-xs leading-relaxed whitespace-pre-line font-sans text-slate-800 dark:text-slate-200">
@@ -809,7 +821,7 @@ export default function TeacherDashboard() {
                                   Hybrid Neuro-Symbolic Autograder:
                                 </span>
                                 <span className="px-2.5 py-0.5 rounded-full bg-indigo-600 text-white font-black text-xs">
-                                  Suggested {sub.auto_eval_score} / {sub.max_marks}
+                                  Suggested {sub.auto_eval_score > 10 ? (sub.auto_eval_score / 10).toFixed(1) : Number(sub.auto_eval_score).toFixed(1)} / 10
                                 </span>
                                 <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
                                   sub.auto_eval_confidence === 'high'
@@ -844,7 +856,7 @@ export default function TeacherDashboard() {
                               <div className="flex items-center gap-2">
                                 <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300">Awarded Mark:</span>
                                 <span className="font-extrabold text-base text-emerald-600 dark:text-emerald-400">
-                                  {sub.mst_score} / {sub.max_marks}
+                                  {sub.mst_score > 10 ? (sub.mst_score / 10).toFixed(1) : Number(sub.mst_score).toFixed(1)} / 10
                                 </span>
                                 {sub.evaluated_at && (
                                   <span className="text-[11px] text-slate-400 ml-2">
@@ -860,7 +872,7 @@ export default function TeacherDashboard() {
                             <button
                               onClick={() => {
                                 setEditingSubmissionId(sub.submission_id);
-                                setGradeScore({ ...gradeScore, [sub.submission_id]: sub.mst_score });
+                                setGradeScore({ ...gradeScore, [sub.submission_id]: (sub.mst_score > 10 ? (sub.mst_score / 10).toFixed(1) : sub.mst_score) });
                                 setGradeFeedback({ ...gradeFeedback, [sub.submission_id]: sub.teacher_feedback || '' });
                               }}
                               className={`px-4 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
@@ -877,18 +889,19 @@ export default function TeacherDashboard() {
                               <span className="text-slate-700 dark:text-slate-300">
                                 {isEditing ? 'Update Grade & Feedback:' : 'Enter Grade & Feedback (Need to Correct):'}
                               </span>
-                              <span className="text-slate-400 text-[11px]">Maximum marks: {sub.max_marks}</span>
+                              <span className="text-slate-400 text-[11px]">Maximum marks: 10</span>
                             </div>
 
                             <div className="flex flex-col sm:flex-row gap-3">
                               <input
                                 type="number"
+                                step="0.1"
                                 min="0"
-                                max={sub.max_marks || 100}
-                                placeholder={`Marks (0-${sub.max_marks || 100})`}
+                                max="10"
+                                placeholder="Marks (0 - 10, e.g. 8.5)"
                                 value={gradeScore[sub.submission_id] ?? ''}
                                 onChange={(e) => setGradeScore({ ...gradeScore, [sub.submission_id]: e.target.value })}
-                                className="w-full sm:w-40 p-2.5 rounded-xl border text-sm font-bold bg-slate-50 dark:bg-slate-800 focus:outline-none focus:border-indigo-500"
+                                className="w-full sm:w-48 p-2.5 rounded-xl border text-sm font-bold bg-slate-50 dark:bg-slate-800 focus:outline-none focus:border-indigo-500"
                               />
 
                               <input
@@ -972,7 +985,7 @@ export default function TeacherDashboard() {
                         <span className={`px-3 py-1 rounded-xl text-xs font-bold border ${
                           isLight ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-amber-950/40 text-amber-300 border-amber-800'
                         }`}>
-                          Original Score: {r.current_score} marks
+                          Original Score: {r.current_score > 10 ? (r.current_score / 10).toFixed(1) : Number(r.current_score || 0).toFixed(1)} / 10 Marks
                         </span>
                       </div>
                     </div>
@@ -1087,11 +1100,14 @@ export default function TeacherDashboard() {
                     <div className="pt-2 flex flex-wrap items-center gap-3">
                       <div className="flex items-center gap-2">
                         <label className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                          Revised Mark:
+                          Revised Mark (0-10):
                         </label>
                         <input
                           type="number"
-                          placeholder="e.g. 85"
+                          step="0.1"
+                          min="0"
+                          max="10"
+                          placeholder="e.g. 8.5"
                           value={revalScore[r.id] ?? ''}
                           onChange={(e) => setRevalScore({ ...revalScore, [r.id]: e.target.value })}
                           className="w-28 p-2 rounded-xl border text-sm font-bold bg-white dark:bg-slate-800 text-center"

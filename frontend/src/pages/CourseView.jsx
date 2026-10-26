@@ -983,7 +983,7 @@ export default function CourseView() {
                       {progress?.task_submitted ? (
                         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800 border border-indigo-300 dark:bg-indigo-950 dark:text-indigo-300">
                           <CheckCircle className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                          {progress.task_status === 'graded' ? `Graded (${progress.task_score} marks)` : 'Submitted (Under Review)'}
+                          {progress.task_status === 'graded' ? `Graded (${progress.task_score > 10 ? (progress.task_score / 10).toFixed(1) : Number(progress.task_score).toFixed(1)} / 10 marks)` : 'Submitted (Under Review)'}
                         </span>
                       ) : !progress?.quiz_passed ? (
                         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-200 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-400">
@@ -1013,7 +1013,7 @@ export default function CourseView() {
                           <p className="font-bold flex items-center gap-1.5">
                             <CheckCircle className="w-4 h-4" />
                             {progress.task_status === 'graded'
-                              ? `Evaluated by Instructor: Awarded ${progress.task_score} marks.`
+                              ? `Evaluated by Instructor: Awarded ${progress.task_score > 10 ? (progress.task_score / 10).toFixed(1) : Number(progress.task_score).toFixed(1)} / 10 marks.`
                               : 'Your solution has been submitted and is awaiting instructor grading.'}
                           </p>
                           {progress.task_feedback && (
@@ -1083,7 +1083,7 @@ export default function CourseView() {
                             <div className="mt-3 p-2.5 rounded-xl bg-emerald-100/90 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-[11px] text-emerald-900 dark:text-emerald-300">
                               <div className="flex items-center gap-2 font-bold">
                                 <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-                                <span>Revaluation Accepted! Revised Mark: {progress.revaluation_revised_score ?? progress.task_score} marks.</span>
+                                <span>Revaluation Accepted! Revised Mark: {((progress.revaluation_revised_score ?? progress.task_score) > 10 ? ((progress.revaluation_revised_score ?? progress.task_score) / 10).toFixed(1) : Number(progress.revaluation_revised_score ?? progress.task_score).toFixed(1))} / 10 marks.</span>
                               </div>
                               {progress.revaluation_notes && (
                                 <p className="mt-1 text-[10px] text-emerald-800 dark:text-emerald-400 italic">
@@ -1097,7 +1097,7 @@ export default function CourseView() {
                             <div className="mt-3 p-2.5 rounded-xl bg-slate-200/80 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-[11px] text-slate-700 dark:text-slate-300">
                               <div className="flex items-center gap-2 font-semibold">
                                 <AlertCircle className="w-4 h-4 text-slate-500 shrink-0" />
-                                <span>Revaluation Reviewed: Original mark retained ({progress.task_score} marks).</span>
+                                <span>Revaluation Reviewed: Original mark retained ({(progress.task_score > 10 ? (progress.task_score / 10).toFixed(1) : Number(progress.task_score).toFixed(1))} / 10 marks).</span>
                               </div>
                               {progress.revaluation_notes && (
                                 <p className="mt-1 text-[10px] text-slate-500 italic">
@@ -1510,7 +1510,7 @@ export default function CourseView() {
                   <span className="text-[11px] text-slate-400">Current Awarded Score:</span>
                 </div>
                 <span className="text-sm font-black text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 px-3 py-1 rounded-xl border border-purple-200 dark:border-purple-800">
-                  {progress?.task_score} marks
+                  {progress?.task_score > 10 ? (progress.task_score / 10).toFixed(1) : Number(progress?.task_score || 0).toFixed(1)} / 10 marks
                 </span>
               </div>
               {progress?.task_problem_statement && (
